@@ -12,6 +12,7 @@ Build a production-quality multi-agent system that plans meals, optimizes grocer
 4. **Run-centric, not CRUD-centric**: The API models graph execution runs, not individual resources.
 5. **Custom orchestration**: Hand-built supervisor and subgraphs, not `langgraph-supervisor` abstractions.
 6. **Memory as a first-class subsystem**: Four distinct memory layers (short-term run state, long-term canonical facts, episodic memories, procedural prompts/policies) with explicit context assembly per node — no raw state dumps into prompts.
+7. **Frontend as the trust layer**: The UI makes agent behavior transparent — live progress streaming, verification results before approval, learned preferences the user can inspect and correct. Built alongside each backend phase, not bolted on later.
 
 ---
 
@@ -32,6 +33,12 @@ Build a production-quality multi-agent system that plans meals, optimizes grocer
 | Embeddings | OpenAI `text-embedding-3-small` | Recipe vectorization for Qdrant |
 | Cache | Redis (Phase 7) | LLM response caching, quote caching for cost reduction |
 | Recipe Data | RecipeNLG or Epicurious dataset (real, not LLM-generated) | Groundedness requires real source data |
+| Frontend | Next.js 15 (App Router) + TypeScript | SSR, React Server Components, great DX, portfolio-friendly |
+| UI Components | shadcn/ui + Tailwind CSS 4 | Beautiful defaults, accessible, copy-paste not dependency |
+| State/Data Fetching | TanStack Query (React Query) | Cache, SSE integration, optimistic updates, devtools |
+| Forms | React Hook Form + Zod | Validation mirrors backend Pydantic schemas |
+| Charts | Recharts | Lightweight, composable, good for nutrition/budget viz |
+| Real-time | Native EventSource (SSE) | Matches backend SSE streaming, no WebSocket overhead |
 
 ---
 
@@ -44,6 +51,71 @@ shopper/
 ├── docker-compose.yml                # Postgres + Qdrant (+ Redis in Phase 7)
 ├── alembic/                          # DB migrations
 │   └── versions/
+├── web/                              # Next.js frontend
+│   ├── package.json
+│   ├── next.config.ts
+│   ├── tailwind.config.ts
+│   ├── tsconfig.json
+│   ├── components.json               # shadcn/ui config
+│   ├── public/
+│   ├── src/
+│   │   ├── app/                      # App Router pages
+│   │   │   ├── layout.tsx            # Root layout — nav, providers
+│   │   │   ├── page.tsx              # Landing / dashboard
+│   │   │   ├── onboarding/
+│   │   │   │   └── page.tsx          # New user profile creation
+│   │   │   ├── profile/
+│   │   │   │   └── page.tsx          # Edit profile + dietary prefs
+│   │   │   ├── runs/
+│   │   │   │   ├── page.tsx          # Run history list
+│   │   │   │   ├── new/
+│   │   │   │   │   └── page.tsx      # Start a new run
+│   │   │   │   └── [runId]/
+│   │   │   │       ├── page.tsx      # Live run progress + results
+│   │   │   │       └── approve/
+│   │   │   │           └── page.tsx  # Checkout approval gate (Phase 5)
+│   │   │   ├── inventory/
+│   │   │   │   └── page.tsx          # Fridge inventory CRUD (Phase 3)
+│   │   │   └── feedback/
+│   │   │       └── [runId]/
+│   │   │           └── page.tsx      # Post-run feedback (Phase 6)
+│   │   ├── components/               # Shared UI components
+│   │   │   ├── ui/                   # shadcn/ui primitives (button, card, etc.)
+│   │   │   ├── layout/
+│   │   │   │   ├── nav.tsx           # Top nav / sidebar
+│   │   │   │   └── providers.tsx     # QueryClientProvider, theme, etc.
+│   │   │   ├── profile/
+│   │   │   │   └── profile-form.tsx  # User profile form (reused in onboarding + edit)
+│   │   │   ├── run/
+│   │   │   │   ├── run-progress.tsx  # SSE-powered live progress tracker
+│   │   │   │   ├── phase-stepper.tsx # Visual step indicator (planning→shopping→checkout)
+│   │   │   │   └── run-card.tsx      # Run summary card for history list
+│   │   │   ├── plan/
+│   │   │   │   ├── meal-calendar.tsx # 7-day meal plan grid (Phase 2)
+│   │   │   │   ├── recipe-card.tsx   # Individual recipe with macros (Phase 2)
+│   │   │   │   └── nutrition-summary.tsx # Daily/weekly macro breakdown
+│   │   │   ├── grocery/
+│   │   │   │   ├── grocery-list.tsx  # Categorized grocery list (Phase 3)
+│   │   │   │   └── price-table.tsx   # Store price comparison (Phase 4)
+│   │   │   ├── checkout/
+│   │   │   │   ├── cart-review.tsx   # Cart contents + screenshot (Phase 5)
+│   │   │   │   └── approval-gate.tsx # Approve/reject/edit controls (Phase 5)
+│   │   │   ├── inventory/
+│   │   │   │   └── inventory-manager.tsx # Fridge item CRUD (Phase 3)
+│   │   │   └── feedback/
+│   │   │       ├── meal-rating.tsx   # Star rating + comment per meal (Phase 6)
+│   │   │       └── preference-dashboard.tsx # Learned preferences viz (Phase 6)
+│   │   ├── lib/
+│   │   │   ├── api.ts                # Typed API client (wraps fetch, points to FastAPI)
+│   │   │   ├── sse.ts                # SSE hook for run streaming
+│   │   │   ├── types.ts              # TypeScript types mirroring backend Pydantic schemas
+│   │   │   └── utils.ts              # cn() helper, formatters
+│   │   └── hooks/
+│   │       ├── use-run.ts            # TanStack Query hook for run state
+│   │       ├── use-run-stream.ts     # SSE subscription hook
+│   │       ├── use-user.ts           # User profile query/mutation hooks
+│   │       └── use-inventory.ts      # Inventory CRUD hooks (Phase 3)
+│   └── .env.local                    # NEXT_PUBLIC_API_URL=http://localhost:8000
 ├── data/
 │   └── recipes/                      # Real recipe dataset (RecipeNLG extract)
 ├── src/shopper/
@@ -590,6 +662,7 @@ def _phase_verified(verdicts: list, phase: str) -> bool:
 
 ```
 POST   /v1/runs                    # Start a new planning run
+GET    /v1/runs?user_id={user_id}&limit={n}  # List recent runs for dashboard/history
 GET    /v1/runs/{run_id}           # Get run state (plan, grocery list, orders, status)
 POST   /v1/runs/{run_id}/resume    # Resume paused run (approval/rejection/edits)
 GET    /v1/runs/{run_id}/stream    # SSE stream of agent progress
@@ -597,7 +670,7 @@ GET    /v1/runs/{run_id}/trace     # LangSmith trace link
 
 POST   /v1/users                   # Create user profile
 GET    /v1/users/{user_id}         # Get user profile
-PATCH  /v1/users/{user_id}         # Update profile
+PUT    /v1/users/{user_id}         # Update profile
 
 POST   /v1/users/{user_id}/inventory       # Add fridge items
 GET    /v1/users/{user_id}/inventory       # Get fridge contents
@@ -660,8 +733,10 @@ FastAPI app with run-centric API, PostgreSQL, the planning subgraph (determinist
 
 **7. Run-centric API**
 - `src/shopper/api/routes/runs.py`:
-  - `POST /v1/runs` — accepts UserProfile, creates run, invokes graph
+  - `POST /v1/runs` — accepts `{user_id, profile}`, creates run, invokes graph
+  - `GET /v1/runs?user_id=...&limit=...` — returns recent runs for dashboard/history views
   - `GET /v1/runs/{run_id}` — returns run state
+  - `GET /v1/runs/{run_id}/trace` — returns LangSmith trace metadata/URL for UI deep-linking
 - `src/shopper/api/routes/users.py` — user profile CRUD
 
 **8. Eval harness (initial)**
@@ -675,11 +750,42 @@ FastAPI app with run-centric API, PostgreSQL, the planning subgraph (determinist
 - `scripts/run_evals.py` — CLI: `python scripts/run_evals.py --eval nutrition`
 - Results upload to LangSmith as experiments
 
-**9. Tests**
+**9. Frontend — scaffolding + profile + run basics**
+- `web/` — Next.js 15 project: `npx create-next-app@latest web --typescript --tailwind --app --src-dir`
+- `npx shadcn@latest init` — install shadcn/ui with default theme
+- Install dependencies: `@tanstack/react-query`, `react-hook-form`, `zod`, `@hookform/resolvers`
+- `web/src/lib/api.ts` — typed API client:
+  - Base URL from `NEXT_PUBLIC_API_URL` env var
+  - Typed wrappers: `createUser()`, `getUser()`, `updateUser()`, `listRuns()`, `createRun()`, `getRun()`, `getRunTrace()`
+  - Error handling: parse FastAPI error responses into typed errors
+- `web/src/lib/types.ts` — TypeScript types mirroring backend Pydantic schemas:
+  - `UserProfileCreate`, `UserProfileRead`, `UserProfileUpdate`, `RunCreateRequest`, `RunRead`, `RunStatus`
+  - Keep in sync manually (small surface area in Phase 1, grow per phase)
+- `web/src/app/layout.tsx` — root layout with nav shell, `QueryClientProvider`
+- `web/src/app/onboarding/page.tsx` — **onboarding flow**:
+  - Multi-step form: basics (age, weight, height, sex) → goals (cut/bulk/maintain) → dietary restrictions + allergies → budget + household → cooking skill + schedule
+  - React Hook Form + Zod validation matching backend constraints
+  - Calls `POST /v1/users` on submit → redirects to dashboard
+- `web/src/app/profile/page.tsx` — **edit profile** (reuses form component, pre-populated)
+- `web/src/app/page.tsx` — **dashboard** (minimal for Phase 1):
+  - "Start a new meal plan" button loads the saved profile via `GET /v1/users/{user_id}` and submits `POST /v1/runs` with the full `{user_id, profile}` payload
+  - Shows most recent run status via `GET /v1/runs?user_id=...&limit=1`
+- `web/src/app/runs/[runId]/page.tsx` — **run detail page**:
+  - Polls `GET /v1/runs/{run_id}` via TanStack Query (SSE streaming added in Phase 2)
+  - Shows phase stepper: planning (active) → shopping (locked) → checkout (locked)
+  - Displays nutrition plan output: daily calories, protein/carbs/fat split
+  - Macro breakdown as simple bar or donut chart (Recharts)
+- `web/src/components/run/phase-stepper.tsx` — visual step indicator, reused across phases
+- `web/src/components/plan/nutrition-summary.tsx` — nutrition plan display card
+- `web/src/hooks/use-user.ts` — TanStack Query hooks: `useUser(id)`, `useCreateUser()`, `useUpdateUser()`
+- `web/src/hooks/use-run.ts` — TanStack Query hooks: `useRun(id)`, `useRuns(userId, limit?)`, `useCreateRun()`, `useRunTrace()`
+
+**10. Tests**
 - Unit: `nutrition_calc.calculate_tdee()` against hand-computed values
 - Unit: `nutrition_calc.calculate_macros()` for each goal type
 - Unit: `nutrition_validator` catches out-of-bounds plans
 - Integration: `POST /v1/runs` → run completes → nutrition plan in state → LangSmith trace exists
+- Integration: `GET /v1/runs?user_id=...&limit=1` returns the most recent run for the dashboard
 - Eval: `run_evals.py --eval nutrition` passes
 
 ### Key Learnings
@@ -688,6 +794,7 @@ FastAPI app with run-centric API, PostgreSQL, the planning subgraph (determinist
 - Separating deterministic logic from LLM calls
 - Eval harness pattern with LangSmith experiments
 - Run-centric API design for agent systems
+- Next.js App Router + TanStack Query for API-driven UIs
 
 ---
 
@@ -767,7 +874,38 @@ Qdrant-backed hybrid recipe search with reranking. MealSelector upgraded to a re
   - Every recipe_id resolves to a real record
   - Nutrition facts in meal plan match source data
 
-**7. Tests**
+**7. Frontend — meal plan display + SSE streaming**
+- `web/src/lib/sse.ts` — SSE utility:
+  - `subscribeToRun(runId): EventSource` — connects to `GET /v1/runs/{run_id}/stream`
+  - Parses typed events: `phase_started`, `phase_completed`, `node_entered`, `node_completed`, `error`, `run_completed`
+  - Auto-reconnect on disconnect
+- `web/src/hooks/use-run-stream.ts` — React hook wrapping SSE:
+  - Merges SSE events into TanStack Query cache (run state stays fresh without polling)
+  - Exposes: `status`, `currentPhase`, `events[]`, `isStreaming`
+- `web/src/components/run/run-progress.tsx` — **live run progress**:
+  - Phase stepper updates in real-time as SSE events arrive
+  - Event log: scrolling list of agent actions ("Calculating nutrition targets...", "Searching recipes for Monday breakfast...", "Selected: Thai Basil Chicken")
+  - Elapsed time per phase
+- `web/src/components/plan/meal-calendar.tsx` — **7-day meal plan grid**:
+  - 7 columns (Mon–Sun) × 3–4 rows (breakfast, lunch, dinner, snack)
+  - Each cell is a clickable recipe card
+  - Color-coded by macro fit (green = on target, yellow = slightly off, red = way off)
+  - Responsive: collapses to single-day view on mobile
+- `web/src/components/plan/recipe-card.tsx` — **recipe detail card**:
+  - Recipe name, cuisine tag, prep time
+  - Macro bar: protein / carbs / fat as stacked horizontal bar
+  - Calorie count
+  - Expandable: full ingredient list, instructions, source link
+- `web/src/components/plan/nutrition-summary.tsx` — **upgraded**:
+  - Daily macro breakdown per day (bar chart via Recharts)
+  - Weekly average vs. target overlay
+  - Highlight days that are over/under target
+- Update `web/src/app/runs/[runId]/page.tsx`:
+  - Switch from polling to SSE streaming
+  - Show live progress during run, meal calendar after completion
+  - "View in LangSmith" link using `GET /v1/runs/{run_id}/trace`
+
+**8. Tests**
 - Unit: Qdrant search returns relevant results for "high protein breakfast under 20 min"
 - Unit: safety_validator catches peanut oil for nut-allergy user
 - Integration: full run → nutrition plan → meal selection → critic passes
@@ -779,6 +917,7 @@ Qdrant-backed hybrid recipe search with reranking. MealSelector upgraded to a re
 - Context engineering: fitting profile + plan + schedule + preferences into prompt window
 - Critic pattern: verification gate between subgraphs
 - Safety-critical evaluation (zero tolerance)
+- SSE integration with React for real-time agent progress
 
 ---
 
@@ -828,7 +967,29 @@ Deterministic grocery list builder that extracts ingredients, diffs against frid
   - No phantom items (items not in any recipe)
   - Unit conversions are correct
 
-**7. Tests**
+**7. Frontend — fridge inventory + grocery list**
+- `web/src/hooks/use-inventory.ts` — TanStack Query CRUD hooks:
+  - `useInventory(userId)` — fetches `GET /v1/users/{user_id}/inventory`
+  - `useAddInventoryItem()` — `POST`, with optimistic update
+  - `useDeleteInventoryItem()` — `DELETE`, with optimistic update
+- `web/src/app/inventory/page.tsx` — **fridge inventory page**:
+  - Table/list of current fridge items: name, quantity, unit, category, expiry date
+  - "Add item" form (inline or modal): name, quantity, unit, category, expiry
+  - Delete button per item with confirmation
+  - Visual indicator for items expiring soon (< 3 days = yellow, expired = red)
+  - Category filter tabs: produce, dairy, meat, pantry, frozen
+- `web/src/components/inventory/inventory-manager.tsx` — reusable inventory CRUD component
+- `web/src/components/grocery/grocery-list.tsx` — **grocery list display**:
+  - Grouped by category (produce, dairy, meat, pantry, frozen)
+  - Each item shows: name, quantity, unit
+  - Items marked `already_have` shown as struck-through with "In fridge" badge
+  - Summary: total items needed, items already owned
+- Update `web/src/app/runs/[runId]/page.tsx`:
+  - After meal plan section, show grocery list section (appears when shopping phase completes)
+  - "Edit fridge" link → inventory page (so user can update before next run)
+- Add inventory link to nav
+
+**8. Tests**
 - Unit: `aggregate_quantities` handles "2 cups milk" + "1.5 cups milk" = "3.5 cups milk"
 - Unit: `diff_against_fridge` correctly marks owned items
 - Unit: unit conversion edge cases (grams to oz, teaspoons to tablespoons)
@@ -839,6 +1000,7 @@ Deterministic grocery list builder that extracts ingredients, diffs against frid
 - When NOT to use an LLM (this node is pure code)
 - Tool integration for data access within graph nodes
 - Deterministic service design in agent pipelines
+- Optimistic updates with TanStack Query for responsive CRUD UIs
 
 ---
 
@@ -904,7 +1066,27 @@ Price optimizer with parallel store queries (1 real + 2 mock), deterministic pri
   - Online/in-store split is reasonable given user preferences
 - Substitution evals: substituted items are nutritionally similar, within budget, no allergens
 
-**8. Tests**
+**8. Frontend — price comparison + budget tracking**
+- `web/src/components/grocery/price-table.tsx` — **store price comparison**:
+  - Table: rows = grocery items, columns = stores (Instacart, Walmart, Costco)
+  - Each cell shows price, highlight cheapest per item (green)
+  - Out-of-stock items marked with badge
+  - Column footer: store total + delivery fee = grand total per store
+  - Recommended split indicator: items tagged "buy online" vs. "buy in store"
+- `web/src/components/grocery/budget-bar.tsx` — **budget indicator**:
+  - Horizontal progress bar: total cost vs. weekly budget
+  - Green/yellow/red thresholds (< 80% / 80-100% / over budget)
+  - If over budget: shows overage amount + "Agent is finding alternatives..." during replan
+- `web/src/components/grocery/purchase-orders.tsx` — **purchase order summary**:
+  - Card per store with: store name, item count, subtotal, delivery fee, channel (online/in-store)
+  - Combined total across all orders
+  - Status badge per order: pending → approved → purchased
+- Update `web/src/app/runs/[runId]/page.tsx`:
+  - After grocery list section, show price comparison + purchase orders
+  - Budget bar visible throughout shopping phase
+  - During substitution/replan: show "Replanning..." indicator with reason
+
+**9. Tests**
 - Unit: `price_ranker` picks cheapest per item correctly
 - Unit: `budget_checker` catches over-budget scenarios
 - Unit: fan-out completes within timeout, handles partial adapter failures gracefully
@@ -918,6 +1100,7 @@ Price optimizer with parallel store queries (1 real + 2 mock), deterministic pri
 - Knowing where to use LLM (tradeoff reasoning) vs. code (price sorting)
 - Replanning loops with iteration caps
 - Error handling for unreliable external services
+- Data table patterns for multi-dimensional comparison UIs
 
 ---
 
@@ -982,10 +1165,36 @@ browser-use agent for cart building with deterministic verification gates, `inte
   - Recovery rate: browser-use self-recovers on minor issues
   - Approval compliance: 100% human approval before checkout
 
-**7. Tests**
+**7. Frontend — checkout approval gate + run history**
+- `web/src/app/runs/[runId]/approve/page.tsx` — **checkout approval page** (the critical human-in-the-loop screen):
+  - Navigated to automatically when SSE emits `approval_requested` event
+  - Shows per-store cart review:
+    - Cart items table: item name, quantity, unit price, line total
+    - Cart screenshot (rendered from `cart_screenshot_path` via backend)
+    - Cart verification status: passed/failed with discrepancy details
+    - Subtotal, delivery fee, total
+  - Spending guardrail display: "This order: $X / Your weekly limit: $Y"
+  - **Action buttons**:
+    - "Approve" → `POST /v1/runs/{run_id}/resume` with `{"decision": "approve"}`
+    - "Reject" → confirmation dialog with optional reason → `POST /v1/runs/{run_id}/resume` with `{"decision": "reject"}`
+    - "Edit" → inline item removal/quantity adjustment → `POST /v1/runs/{run_id}/resume` with `{"decision": "approve", "edits": {...}}`
+  - Clear warning: "Approving will complete the purchase. This cannot be undone."
+- `web/src/components/checkout/cart-review.tsx` — cart contents display component
+- `web/src/components/checkout/approval-gate.tsx` — approve/reject/edit controls
+- `web/src/app/runs/page.tsx` — **run history page**:
+  - List of all past runs, newest first
+  - Each row: date, status (completed/failed/awaiting approval), meal count, total cost
+  - Click → navigates to run detail page
+  - Filter by status
+  - Runs awaiting approval highlighted with badge
+- `web/src/components/run/run-card.tsx` — run summary card for history list
+- Update nav: add "History" link
+- **Notification**: when a run reaches approval state, show a toast/banner on any page: "Your cart is ready for review" with link to approval page
+
+**8. Tests**
 - Integration: browser-use against a mock store page (local Playwright test server)
-- Test: `interrupt_before` pauses execution, `POST /resume` with approval continues
-- Test: `POST /resume` with rejection stops, records reason
+- Test: `interrupt_before` pauses execution, `POST /v1/runs/{run_id}/resume` with approval continues
+- Test: `POST /v1/runs/{run_id}/resume` with rejection stops, records reason
 - Test: spending limit blocks checkout over threshold
 - Test: cart verifier catches wrong quantity, triggers retry
 - Test: 2x browser-use failure → graceful fallback to manual mode
@@ -998,6 +1207,7 @@ browser-use agent for cart building with deterministic verification gates, `inte
 - Governance: spending limits, approval gates, audit trails
 - Bounded autonomy: agent navigates, code verifies, human approves
 - Fallback design: graceful degradation when automation fails
+- Building trust through UI: showing verification results + screenshots before irreversible actions
 
 ---
 
@@ -1078,7 +1288,32 @@ Full memory write pipeline: feedback → episodic memory → background distilla
 - Eval: user with "difficulty: too hard" pattern → simpler recipes selected
 - Eval: conflicting feedback (liked Italian week 1, disliked week 5) → recency wins
 
-**8. Tests**
+**8. Frontend — feedback + preference learning visualization**
+- `web/src/app/feedback/[runId]/page.tsx` — **post-run feedback page**:
+  - Shows completed meal plan as a card grid
+  - Per-meal feedback widget:
+    - Star rating (1-5)
+    - Quick tags: "Too hard", "Too expensive", "Wrong portion", "Would repeat", "Skipped"
+    - Optional free-text comment
+  - Overall plan feedback: "How was this week's plan?" (1-5 stars + comment)
+  - Submit calls `POST /v1/feedback` for each rated meal
+  - Thank-you state: "Your feedback helps improve future plans"
+- `web/src/components/feedback/meal-rating.tsx` — star rating + tag + comment component
+- `web/src/components/feedback/preference-dashboard.tsx` — **learned preferences display**:
+  - Shows what the system has learned about the user (from distilled `UserPreferenceSummary`):
+    - Cuisine affinities as horizontal bar chart (Mediterranean: 80%, Italian: 30%, ...)
+    - Ingredient aversions as tag list
+    - Complexity tolerance, budget sensitivity, time preference as labeled badges
+  - "The system remembers" section: recent episodic memories as a timeline
+    - "Loved Thai basil chicken (5 stars, cooked 3x)"
+    - "Said salmon was too fishy"
+    - "Prefers one-pot meals on weeknights"
+  - User can delete individual memories ("Forget this")
+- Add preference dashboard to profile page as a tab/section
+- Update run detail page: add "Give feedback" button after run completes (links to feedback page)
+- Update dashboard: show "Feedback pending" badge for completed runs without feedback
+
+**9. Tests**
 - Unit: feedback processor writes correct episodic memories
 - Unit: distiller computes correct cuisine affinities from event history
 - Unit: ContextAssembler respects token budget, drops low-relevance memories first
@@ -1096,6 +1331,7 @@ Full memory write pipeline: feedback → episodic memory → background distilla
 - Memory-augmented retrieval: combining recipe search with user memory
 - Background distillation: append-only events → compact preference profile
 - Preference learning without fine-tuning (retrieval + memory + prompt context)
+- Making AI memory transparent: showing users what the system remembers builds trust and invites correction
 
 ---
 
@@ -1159,7 +1395,33 @@ Model routing for cost reduction, Redis caching, full observability dashboard vi
 - Health check: `GET /health` verifies DB, Qdrant, Redis, LangSmith connectivity
 - Docker Compose for full stack: API + Postgres + Qdrant + Redis
 
-**8. Tests**
+**8. Frontend — polish, loading states, cost dashboard**
+- **Loading & error states across all pages**:
+  - Skeleton loaders (shadcn `Skeleton`) for every data-dependent component
+  - Error boundaries with retry buttons
+  - Empty states with helpful CTAs ("No runs yet — start your first meal plan")
+  - Toast notifications for async operations (feedback submitted, inventory updated)
+- `web/src/components/run/cost-summary.tsx` — **per-run cost display**:
+  - Total grocery cost, delivery fees, savings from optimization
+  - Cost trend chart: weekly spending over time (Recharts line chart)
+  - Token/LLM cost per run (from audit log, if user opts in to seeing it)
+- **Dashboard upgrades** (`web/src/app/page.tsx`):
+  - Weekly summary: runs this week, total spent, upcoming meal plan
+  - Quick actions: "Plan this week", "Update fridge", "View history"
+  - Spending widget: weekly spend vs. budget (reuses budget-bar)
+- **Responsive design pass**:
+  - All pages usable on mobile (375px+)
+  - Meal calendar collapses to day-by-day swipe view
+  - Grocery list stacks columns on narrow screens
+  - Checkout approval works on phone (critical — user might approve from notification)
+- **Accessibility pass**:
+  - Keyboard navigation for all interactive elements
+  - ARIA labels on charts and custom components
+  - Color contrast compliance (WCAG AA)
+  - Screen reader support for phase stepper and progress updates
+- **Dark mode**: shadcn/ui dark theme toggle (already supported, just wire it up)
+
+**9. Tests**
 - Test: model routing produces correct model per node type
 - Test: cache hit returns same result, reduces API calls
 - Test: rate limiting returns 429
@@ -1173,6 +1435,7 @@ Model routing for cost reduction, Redis caching, full observability dashboard vi
 - Production observability for AI systems
 - Governance and audit trails (enterprise AI readiness)
 - CI/CD integration for eval-gated deployments
+- Production frontend polish: loading states, error handling, responsive design, accessibility
 
 ---
 
@@ -1192,6 +1455,7 @@ Model routing for cost reduction, Redis caching, full observability dashboard vi
 | MCP, tool-calling protocols, API integrations | 3, 4 | Tool definitions, store adapters, USDA API |
 | Evaluation frameworks, continuous monitoring | 1-7 | LangSmith experiments, online monitoring, CI gates, memory evals |
 | Enterprise AI (compliance, audit trails, governance) | 5, 7 | Spending limits, approval gates, audit log, data retention |
+| Full-stack delivery (demo-ready) | 1-7 | Next.js frontend built alongside each backend phase, SSE streaming, human-in-the-loop approval UI |
 
 ---
 

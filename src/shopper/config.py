@@ -10,6 +10,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     app_env: str = Field(default="development", alias="SHOPPER_APP_ENV")
     database_url: str = Field(default="sqlite+aiosqlite:///./shopper.db", alias="SHOPPER_DATABASE_URL")
+    cors_origins: str = Field(
+        default="http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001",
+        alias="SHOPPER_CORS_ORIGINS",
+    )
     langsmith_tracing: bool = Field(default=False, alias="LANGSMITH_TRACING")
     langsmith_project: str = Field(default="shopper", alias="LANGSMITH_PROJECT")
     langsmith_api_key: Optional[str] = Field(default=None, alias="LANGSMITH_API_KEY")

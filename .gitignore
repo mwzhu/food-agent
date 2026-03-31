@@ -1,0 +1,10 @@
+.DS_Store
+.pytest_cache/
+.venv/
+__pycache__/
+*.egg-info/
+*.pyc
+shopper.db
+web/.next/
+web/node_modules/
+npm-debug.log*

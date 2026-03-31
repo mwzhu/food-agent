@@ -2,17 +2,31 @@ from __future__ import annotations
 
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from shopper.agents import invoke_planner_graph
 from shopper.api.deps import get_db_session, get_graph, get_settings
 from shopper.models import PlanRun, UserProfile
-from shopper.schemas import PlannerStateSnapshot, RunCreateRequest, RunRead
+from shopper.schemas import PlannerStateSnapshot, RunCreateRequest, RunRead, RunTraceRead
 
 
 router = APIRouter(prefix="/v1/runs", tags=["runs"])
+
+
+@router.get("", response_model=list[RunRead])
+async def list_runs(
+    user_id: str = Query(..., min_length=1),
+    limit: int = Query(default=10, ge=1, le=50),
+    session: AsyncSession = Depends(get_db_session),
+) -> list[RunRead]:
+    result = await session.execute(
+        select(PlanRun).where(PlanRun.user_id == user_id).order_by(PlanRun.created_at.desc()).limit(limit)
+    )
+    runs = result.scalars().all()
+    return [RunRead.model_validate(run) for run in runs]
 
 
 @router.post("", response_model=RunRead, status_code=status.HTTP_201_CREATED)
@@ -63,6 +77,23 @@ async def get_run(run_id: str, session: AsyncSession = Depends(get_db_session)) 
     if plan_run is None:
         raise HTTPException(status_code=404, detail="Run not found.")
     return RunRead.model_validate(plan_run)
+
+
+@router.get("/{run_id}/trace", response_model=RunTraceRead)
+async def get_run_trace(run_id: str, session: AsyncSession = Depends(get_db_session)) -> RunTraceRead:
+    plan_run = await session.get(PlanRun, run_id)
+    if plan_run is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    trace_metadata = plan_run.state_snapshot.get("trace_metadata", {})
+    return RunTraceRead(
+        run_id=run_id,
+        kind=trace_metadata.get("kind"),
+        project=trace_metadata.get("project"),
+        trace_id=trace_metadata.get("trace_id"),
+        source=trace_metadata.get("source"),
+        url=None,
+    )
 
 
 @router.post("/{run_id}/resume", status_code=status.HTTP_501_NOT_IMPLEMENTED)

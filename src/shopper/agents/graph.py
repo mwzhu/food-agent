@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict, Literal
 from uuid import UUID, uuid4
 
@@ -54,8 +55,8 @@ async def invoke_planner_graph(
     settings: Settings,
     source: TraceSource,
 ) -> Dict[str, Any]:
-    result = await graph.ainvoke(state)
     trace_id = uuid4()
+    start_time = datetime.now(timezone.utc)
     trace_metadata = {
         "kind": "local",
         "project": settings.langsmith_project,
@@ -73,6 +74,19 @@ async def invoke_planner_graph(
             project_name=settings.langsmith_project,
             id=UUID(str(trace_id)),
             inputs=state,
+            start_time=start_time,
+            extra={
+                "metadata": {
+                    "phase": "phase1",
+                    "source": source,
+                }
+            },
+        )
+    result = await graph.ainvoke(state)
+    if settings.langsmith_tracing:
+        client.update_run(
+            run_id=UUID(str(trace_id)),
+            end_time=datetime.now(timezone.utc),
             outputs=result,
             extra={
                 "metadata": {

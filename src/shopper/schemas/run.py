@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Literal
+from typing import Any, Dict, Literal, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -22,3 +22,12 @@ class RunRead(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class RunTraceRead(BaseModel):
+    run_id: str
+    kind: Optional[str] = None
+    project: Optional[str] = None
+    trace_id: Optional[str] = None
+    source: Optional[str] = None
+    url: Optional[str] = None

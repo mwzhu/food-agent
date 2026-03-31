@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
@@ -91,10 +92,16 @@ class EvaluationRunner:
                 name="eval:{eval_name}:{case_id}".format(eval_name=eval_name, case_id=result["case_id"]),
                 run_type="chain",
                 inputs={"profile": result["profile"]},
-                outputs={"nutrition_plan": result["nutrition_plan"]},
                 project_name=project_name,
                 id=run_id,
+                start_time=datetime.now(timezone.utc),
                 extra={"metadata": {"phase": "phase1", "eval_name": eval_name}},
+            )
+            client.update_run(
+                run_id=run_id,
+                end_time=datetime.now(timezone.utc),
+                outputs={"nutrition_plan": result["nutrition_plan"]},
+                extra={"metadata": {"phase": "phase1", "eval_name": eval_name, "source": "eval"}},
             )
             client.create_feedback(
                 run_id=run_id,

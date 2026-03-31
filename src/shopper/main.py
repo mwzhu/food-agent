@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from typing import Optional
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from shopper.agents import build_planner_graph
 from shopper.api import api_router
@@ -33,6 +34,13 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         await engine.dispose()
 
     app = FastAPI(title="Shopper", version="0.1.0", lifespan=lifespan)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[origin.strip() for origin in settings.cors_origins.split(",") if origin.strip()],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     app.include_router(api_router)
 
     @app.get("/healthz")
