@@ -1,0 +1,38 @@
+Metadata-Version: 2.4
+Name: shopper
+Version: 0.1.0
+Summary: Bounded-autonomy meal planner and grocery agent
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: aiosqlite>=0.20.0
+Requires-Dist: fastapi<1.0.0,>=0.128.0
+Requires-Dist: httpx>=0.28.0
+Requires-Dist: langchain-core>=0.3.0
+Requires-Dist: langgraph>=0.2.0
+Requires-Dist: langsmith>=0.3.0
+Requires-Dist: pydantic<3.0.0,>=2.12.0
+Requires-Dist: pydantic-settings>=2.8.0
+Requires-Dist: qdrant-client>=1.12.0
+Requires-Dist: sqlalchemy<3.0.0,>=2.0.0
+Requires-Dist: uvicorn>=0.30.0
+Provides-Extra: browser
+Requires-Dist: browser-use>=0.3.0; extra == "browser"
+Requires-Dist: playwright>=1.52.0; extra == "browser"
+Provides-Extra: dev
+Requires-Dist: pytest>=8.0.0; extra == "dev"
+
+# Shopper
+
+Backend-first bounded-autonomy meal planner and grocery agent.
+
+This scaffold implements:
+
+- a run-centric FastAPI API
+- LangGraph-backed orchestration for planning and shopping
+- deterministic nutrition, grocery, pricing, and verification services
+- a memory/context subsystem with canonical facts plus episodic memory
+- approval-gated mock browser execution for Walmart
+
+The browser and retrieval integrations are mocked by default so the core
+architecture is runnable without external credentials.
+

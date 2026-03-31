@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "shopper"
+version = "0.1.0"
+description = "Bounded-autonomy meal planner and grocery agent"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+  "aiosqlite>=0.20.0",
+  "fastapi>=0.128.0,<1.0.0",
+  "httpx>=0.28.0",
+  "langchain-core>=0.3.0",
+  "langgraph>=0.2.0",
+  "langsmith>=0.3.0",
+  "pydantic>=2.12.0,<3.0.0",
+  "pydantic-settings>=2.8.0",
+  "qdrant-client>=1.12.0",
+  "sqlalchemy>=2.0.0,<3.0.0",
+  "uvicorn>=0.30.0",
+]
+
+[project.optional-dependencies]
+browser = [
+  "browser-use>=0.3.0",
+  "playwright>=1.52.0",
+]
+dev = [
+  "pytest>=8.0.0",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
