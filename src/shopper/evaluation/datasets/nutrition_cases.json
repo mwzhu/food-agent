@@ -1,0 +1,578 @@
+[
+  {
+    "case_id": "nutrition-001",
+    "profile": {
+      "age": 30,
+      "weight_lbs": 180,
+      "height_in": 70,
+      "sex": "male",
+      "activity_level": "moderately_active",
+      "goal": "maintain",
+      "dietary_restrictions": [],
+      "allergies": [],
+      "budget_weekly": 150.0,
+      "household_size": 1,
+      "cooking_skill": "intermediate",
+      "schedule_json": {
+        "weekday_dinners": "30m"
+      }
+    },
+    "expected": {
+      "tdee": 2763,
+      "daily_calories": 2763,
+      "protein_g": 207,
+      "carbs_g": 242,
+      "fat_g": 107,
+      "fiber_g": 39
+    }
+  },
+  {
+    "case_id": "nutrition-002",
+    "profile": {
+      "age": 28,
+      "weight_lbs": 150,
+      "height_in": 65,
+      "sex": "female",
+      "activity_level": "lightly_active",
+      "goal": "cut",
+      "dietary_restrictions": [
+        "vegetarian"
+      ],
+      "allergies": [],
+      "budget_weekly": 120.0,
+      "household_size": 2,
+      "cooking_skill": "beginner",
+      "schedule_json": {
+        "weekdays": "quick"
+      }
+    },
+    "expected": {
+      "tdee": 1940,
+      "daily_calories": 1649,
+      "protein_g": 165,
+      "carbs_g": 124,
+      "fat_g": 55,
+      "fiber_g": 25
+    }
+  },
+  {
+    "case_id": "nutrition-003",
+    "profile": {
+      "age": 41,
+      "weight_lbs": 205,
+      "height_in": 72,
+      "sex": "male",
+      "activity_level": "very_active",
+      "goal": "bulk",
+      "dietary_restrictions": [],
+      "allergies": [],
+      "budget_weekly": 210.0,
+      "household_size": 3,
+      "cooking_skill": "advanced",
+      "schedule_json": {
+        "training_days": 5
+      }
+    },
+    "expected": {
+      "tdee": 3231,
+      "daily_calories": 3554,
+      "protein_g": 267,
+      "carbs_g": 355,
+      "fat_g": 118,
+      "fiber_g": 50
+    }
+  },
+  {
+    "case_id": "nutrition-004",
+    "profile": {
+      "age": 35,
+      "weight_lbs": 135,
+      "height_in": 64,
+      "sex": "female",
+      "activity_level": "sedentary",
+      "goal": "maintain",
+      "dietary_restrictions": [
+        "gluten_free"
+      ],
+      "allergies": [],
+      "budget_weekly": 100.0,
+      "household_size": 1,
+      "cooking_skill": "intermediate",
+      "schedule_json": {
+        "weekdays": "20m"
+      }
+    },
+    "expected": {
+      "tdee": 1551,
+      "daily_calories": 1551,
+      "protein_g": 116,
+      "carbs_g": 136,
+      "fat_g": 60,
+      "fiber_g": 25
+    }
+  },
+  {
+    "case_id": "nutrition-005",
+    "profile": {
+      "age": 33,
+      "weight_lbs": 170,
+      "height_in": 69,
+      "sex": "other",
+      "activity_level": "moderately_active",
+      "goal": "cut",
+      "dietary_restrictions": [
+        "vegan"
+      ],
+      "allergies": [],
+      "budget_weekly": 140.0,
+      "household_size": 2,
+      "cooking_skill": "intermediate",
+      "schedule_json": {
+        "weekdays": "35m"
+      }
+    },
+    "expected": {
+      "tdee": 2516,
+      "daily_calories": 2139,
+      "protein_g": 214,
+      "carbs_g": 160,
+      "fat_g": 71,
+      "fiber_g": 30
+    }
+  },
+  {
+    "case_id": "nutrition-006",
+    "profile": {
+      "age": 24,
+      "weight_lbs": 160,
+      "height_in": 68,
+      "sex": "male",
+      "activity_level": "extra_active",
+      "goal": "bulk",
+      "dietary_restrictions": [],
+      "allergies": [
+        "peanut"
+      ],
+      "budget_weekly": 175.0,
+      "household_size": 1,
+      "cooking_skill": "advanced",
+      "schedule_json": {
+        "double_sessions": true
+      }
+    },
+    "expected": {
+      "tdee": 3211,
+      "daily_calories": 3532,
+      "protein_g": 265,
+      "carbs_g": 353,
+      "fat_g": 118,
+      "fiber_g": 49
+    }
+  },
+  {
+    "case_id": "nutrition-007",
+    "profile": {
+      "age": 52,
+      "weight_lbs": 190,
+      "height_in": 67,
+      "sex": "female",
+      "activity_level": "lightly_active",
+      "goal": "maintain",
+      "dietary_restrictions": [
+        "pescatarian"
+      ],
+      "allergies": [],
+      "budget_weekly": 160.0,
+      "household_size": 2,
+      "cooking_skill": "intermediate",
+      "schedule_json": {
+        "sunday_prep": true
+      }
+    },
+    "expected": {
+      "tdee": 2069,
+      "daily_calories": 2069,
+      "protein_g": 155,
+      "carbs_g": 181,
+      "fat_g": 80,
+      "fiber_g": 29
+    }
+  },
+  {
+    "case_id": "nutrition-008",
+    "profile": {
+      "age": 46,
+      "weight_lbs": 220,
+      "height_in": 74,
+      "sex": "male",
+      "activity_level": "sedentary",
+      "goal": "cut",
+      "dietary_restrictions": [],
+      "allergies": [],
+      "budget_weekly": 130.0,
+      "household_size": 4,
+      "cooking_skill": "beginner",
+      "schedule_json": {
+        "weekdays": "20m"
+      }
+    },
+    "expected": {
+      "tdee": 2337,
+      "daily_calories": 1986,
+      "protein_g": 199,
+      "carbs_g": 149,
+      "fat_g": 66,
+      "fiber_g": 30
+    }
+  },
+  {
+    "case_id": "nutrition-009",
+    "profile": {
+      "age": 39,
+      "weight_lbs": 125,
+      "height_in": 62,
+      "sex": "female",
+      "activity_level": "very_active",
+      "goal": "bulk",
+      "dietary_restrictions": [
+        "vegetarian"
+      ],
+      "allergies": [],
+      "budget_weekly": 150.0,
+      "household_size": 1,
+      "cooking_skill": "advanced",
+      "schedule_json": {
+        "training_days": 6
+      }
+    },
+    "expected": {
+      "tdee": 2062,
+      "daily_calories": 2268,
+      "protein_g": 170,
+      "carbs_g": 227,
+      "fat_g": 76,
+      "fiber_g": 32
+    }
+  },
+  {
+    "case_id": "nutrition-010",
+    "profile": {
+      "age": 29,
+      "weight_lbs": 145,
+      "height_in": 66,
+      "sex": "other",
+      "activity_level": "lightly_active",
+      "goal": "maintain",
+      "dietary_restrictions": [
+        "dairy_free"
+      ],
+      "allergies": [],
+      "budget_weekly": 115.0,
+      "household_size": 1,
+      "cooking_skill": "beginner",
+      "schedule_json": {
+        "weekdays": "15m"
+      }
+    },
+    "expected": {
+      "tdee": 2038,
+      "daily_calories": 2038,
+      "protein_g": 153,
+      "carbs_g": 178,
+      "fat_g": 79,
+      "fiber_g": 29
+    }
+  },
+  {
+    "case_id": "nutrition-011",
+    "profile": {
+      "age": 58,
+      "weight_lbs": 175,
+      "height_in": 69,
+      "sex": "male",
+      "activity_level": "moderately_active",
+      "goal": "maintain",
+      "dietary_restrictions": [
+        "low_sodium"
+      ],
+      "allergies": [],
+      "budget_weekly": 145.0,
+      "household_size": 2,
+      "cooking_skill": "intermediate",
+      "schedule_json": {
+        "weekdays": "30m"
+      }
+    },
+    "expected": {
+      "tdee": 2486,
+      "daily_calories": 2486,
+      "protein_g": 186,
+      "carbs_g": 218,
+      "fat_g": 97,
+      "fiber_g": 35
+    }
+  },
+  {
+    "case_id": "nutrition-012",
+    "profile": {
+      "age": 22,
+      "weight_lbs": 118,
+      "height_in": 63,
+      "sex": "female",
+      "activity_level": "moderately_active",
+      "goal": "cut",
+      "dietary_restrictions": [
+        "vegetarian"
+      ],
+      "allergies": [],
+      "budget_weekly": 95.0,
+      "household_size": 1,
+      "cooking_skill": "beginner",
+      "schedule_json": {
+        "college": true
+      }
+    },
+    "expected": {
+      "tdee": 1960,
+      "daily_calories": 1666,
+      "protein_g": 167,
+      "carbs_g": 125,
+      "fat_g": 56,
+      "fiber_g": 25
+    }
+  },
+  {
+    "case_id": "nutrition-013",
+    "profile": {
+      "age": 37,
+      "weight_lbs": 198,
+      "height_in": 71,
+      "sex": "male",
+      "activity_level": "very_active",
+      "goal": "maintain",
+      "dietary_restrictions": [
+        "gluten_free"
+      ],
+      "allergies": [],
+      "budget_weekly": 180.0,
+      "household_size": 2,
+      "cooking_skill": "advanced",
+      "schedule_json": {
+        "weekdays": "45m"
+      }
+    },
+    "expected": {
+      "tdee": 3183,
+      "daily_calories": 3183,
+      "protein_g": 239,
+      "carbs_g": 279,
+      "fat_g": 124,
+      "fiber_g": 45
+    }
+  },
+  {
+    "case_id": "nutrition-014",
+    "profile": {
+      "age": 31,
+      "weight_lbs": 210,
+      "height_in": 68,
+      "sex": "female",
+      "activity_level": "sedentary",
+      "goal": "cut",
+      "dietary_restrictions": [
+        "dairy_free"
+      ],
+      "allergies": [],
+      "budget_weekly": 135.0,
+      "household_size": 3,
+      "cooking_skill": "intermediate",
+      "schedule_json": {
+        "weekdays": "25m"
+      }
+    },
+    "expected": {
+      "tdee": 2059,
+      "daily_calories": 1750,
+      "protein_g": 175,
+      "carbs_g": 131,
+      "fat_g": 58,
+      "fiber_g": 25
+    }
+  },
+  {
+    "case_id": "nutrition-015",
+    "profile": {
+      "age": 44,
+      "weight_lbs": 155,
+      "height_in": 65,
+      "sex": "other",
+      "activity_level": "lightly_active",
+      "goal": "bulk",
+      "dietary_restrictions": [
+        "vegan"
+      ],
+      "allergies": [],
+      "budget_weekly": 125.0,
+      "household_size": 2,
+      "cooking_skill": "intermediate",
+      "schedule_json": {
+        "weekdays": "30m"
+      }
+    },
+    "expected": {
+      "tdee": 1976,
+      "daily_calories": 2174,
+      "protein_g": 163,
+      "carbs_g": 217,
+      "fat_g": 72,
+      "fiber_g": 30
+    }
+  },
+  {
+    "case_id": "nutrition-016",
+    "profile": {
+      "age": 27,
+      "weight_lbs": 185,
+      "height_in": 73,
+      "sex": "male",
+      "activity_level": "moderately_active",
+      "goal": "bulk",
+      "dietary_restrictions": [
+        "kosher"
+      ],
+      "allergies": [],
+      "budget_weekly": 165.0,
+      "household_size": 1,
+      "cooking_skill": "advanced",
+      "schedule_json": {
+        "training_days": 4
+      }
+    },
+    "expected": {
+      "tdee": 2895,
+      "daily_calories": 3185,
+      "protein_g": 239,
+      "carbs_g": 318,
+      "fat_g": 106,
+      "fiber_g": 45
+    }
+  },
+  {
+    "case_id": "nutrition-017",
+    "profile": {
+      "age": 60,
+      "weight_lbs": 145,
+      "height_in": 61,
+      "sex": "female",
+      "activity_level": "lightly_active",
+      "goal": "maintain",
+      "dietary_restrictions": [
+        "heart_healthy"
+      ],
+      "allergies": [],
+      "budget_weekly": 105.0,
+      "household_size": 1,
+      "cooking_skill": "beginner",
+      "schedule_json": {
+        "weekdays": "20m"
+      }
+    },
+    "expected": {
+      "tdee": 1602,
+      "daily_calories": 1602,
+      "protein_g": 120,
+      "carbs_g": 140,
+      "fat_g": 62,
+      "fiber_g": 25
+    }
+  },
+  {
+    "case_id": "nutrition-018",
+    "profile": {
+      "age": 34,
+      "weight_lbs": 240,
+      "height_in": 76,
+      "sex": "male",
+      "activity_level": "very_active",
+      "goal": "cut",
+      "dietary_restrictions": [],
+      "allergies": [
+        "shellfish"
+      ],
+      "budget_weekly": 190.0,
+      "household_size": 4,
+      "cooking_skill": "intermediate",
+      "schedule_json": {
+        "training_days": 5
+      }
+    },
+    "expected": {
+      "tdee": 3674,
+      "daily_calories": 3123,
+      "protein_g": 312,
+      "carbs_g": 234,
+      "fat_g": 104,
+      "fiber_g": 44
+    }
+  },
+  {
+    "case_id": "nutrition-019",
+    "profile": {
+      "age": 26,
+      "weight_lbs": 170,
+      "height_in": 70,
+      "sex": "female",
+      "activity_level": "extra_active",
+      "goal": "bulk",
+      "dietary_restrictions": [
+        "nut_free"
+      ],
+      "allergies": [
+        "almond"
+      ],
+      "budget_weekly": 170.0,
+      "household_size": 2,
+      "cooking_skill": "advanced",
+      "schedule_json": {
+        "training_days": 6
+      }
+    },
+    "expected": {
+      "tdee": 3024,
+      "daily_calories": 3326,
+      "protein_g": 249,
+      "carbs_g": 333,
+      "fat_g": 111,
+      "fiber_g": 47
+    }
+  },
+  {
+    "case_id": "nutrition-020",
+    "profile": {
+      "age": 48,
+      "weight_lbs": 132,
+      "height_in": 64,
+      "sex": "other",
+      "activity_level": "sedentary",
+      "goal": "maintain",
+      "dietary_restrictions": [
+        "vegetarian"
+      ],
+      "allergies": [],
+      "budget_weekly": 100.0,
+      "household_size": 1,
+      "cooking_skill": "beginner",
+      "schedule_json": {
+        "weekdays": "15m"
+      }
+    },
+    "expected": {
+      "tdee": 1556,
+      "daily_calories": 1556,
+      "protein_g": 117,
+      "carbs_g": 136,
+      "fat_g": 61,
+      "fiber_g": 28
+    }
+  }
+]
