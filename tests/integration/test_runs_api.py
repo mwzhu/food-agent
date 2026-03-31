@@ -12,7 +12,7 @@ def _make_client(tmp_path: Path) -> TestClient:
     settings = Settings(
         SHOPPER_DATABASE_URL="sqlite+aiosqlite:///{path}".format(path=tmp_path / "test.db"),
         SHOPPER_APP_ENV="test",
-        SHOPPER_ENABLE_REMOTE_LANGSMITH=False,
+        LANGSMITH_TRACING=False,
     )
     app = create_app(settings)
     return TestClient(app)
@@ -47,6 +47,7 @@ def test_post_run_completes_and_persists_state(tmp_path):
         assert len(body["state_snapshot"]["selected_meals"]) == 21
         assert len(body["state_snapshot"]["context_metadata"]) == 2
         assert body["state_snapshot"]["trace_metadata"]["trace_id"]
+        assert body["state_snapshot"]["trace_metadata"]["source"] == "api"
 
         run_id = body["run_id"]
         fetch_response = client.get("/v1/runs/{run_id}".format(run_id=run_id))

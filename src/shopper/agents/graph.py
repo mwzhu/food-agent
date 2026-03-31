@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 from uuid import UUID, uuid4
 
 from langchain_core.messages import HumanMessage
@@ -11,6 +11,9 @@ from shopper.agents.subgraphs import build_planning_subgraph
 from shopper.agents.supervisor import supervisor_node
 from shopper.config import Settings
 from shopper.memory import ContextAssembler
+
+
+TraceSource = Literal["api", "eval", "setup"]
 
 
 def build_planner_graph(context_assembler: ContextAssembler):
@@ -45,23 +48,39 @@ def build_planner_graph(context_assembler: ContextAssembler):
     return graph.compile()
 
 
-async def invoke_planner_graph(graph, state: Dict[str, Any], settings: Settings) -> Dict[str, Any]:
+async def invoke_planner_graph(
+    graph,
+    state: Dict[str, Any],
+    settings: Settings,
+    source: TraceSource,
+) -> Dict[str, Any]:
     result = await graph.ainvoke(state)
     trace_id = uuid4()
-    trace_metadata = {"kind": "local", "project": settings.langchain_project, "trace_id": str(trace_id)}
-    if settings.enable_remote_langsmith:
-        assert settings.langchain_api_key
+    trace_metadata = {
+        "kind": "local",
+        "project": settings.langsmith_project,
+        "trace_id": str(trace_id),
+        "source": source,
+    }
+    if settings.langsmith_tracing:
+        assert settings.langsmith_api_key
         from langsmith import Client
 
-        client = Client(api_key=settings.langchain_api_key)
+        client = Client(api_key=settings.langsmith_api_key)
         client.create_run(
-            name="planner_run",
+            name="{source}:planner_run".format(source=source),
             run_type="chain",
-            project_name=settings.langchain_project,
+            project_name=settings.langsmith_project,
             id=UUID(str(trace_id)),
             inputs=state,
             outputs=result,
-            extra={"metadata": {"phase": "phase1", "context_metadata": result["context_metadata"]}},
+            extra={
+                "metadata": {
+                    "phase": "phase1",
+                    "source": source,
+                    "context_metadata": result["context_metadata"],
+                }
+            },
         )
         trace_metadata["kind"] = "remote"
     result["trace_metadata"] = trace_metadata

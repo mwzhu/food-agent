@@ -13,4 +13,4 @@ This repository now matches the Phase 1 plan in `PLAN.md`:
 
 The app runs fully offline by default. LangSmith tracing works in local mode
 through local trace IDs, and remote LangSmith logging/experiments turn on only
-when the relevant environment variables are provided.
+when `LANGSMITH_TRACING`, `LANGSMITH_PROJECT`, and `LANGSMITH_API_KEY` are set.

@@ -49,7 +49,7 @@ async def create_run(
     session.add(plan_run)
     await session.commit()
 
-    result = await invoke_planner_graph(graph=graph, state=initial_state, settings=settings)
+    result = await invoke_planner_graph(graph=graph, state=initial_state, settings=settings, source="api")
     plan_run.status = result["status"]
     plan_run.state_snapshot = jsonable_encoder(result)
     await session.commit()

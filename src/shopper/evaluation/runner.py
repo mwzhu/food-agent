@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
@@ -38,7 +37,7 @@ class EvaluationRunner:
                 trace_metadata={},
             ).model_dump(mode="json")
 
-            graph_result = await invoke_planner_graph(self.graph, initial_state, self.settings)
+            graph_result = await invoke_planner_graph(self.graph, initial_state, self.settings, source="eval")
             assert "nutrition_plan" in graph_result
             plan = NutritionPlan.model_validate(graph_result["nutrition_plan"])
             evaluation = self.nutrition_evaluator.evaluate(case, plan)
@@ -72,31 +71,28 @@ class EvaluationRunner:
         return cases
 
     def _maybe_upload_results(self, eval_name: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
-        if not self.settings.enable_remote_langsmith:
+        if not self.settings.langsmith_tracing:
             return {"kind": "skipped", "reason": "Remote LangSmith upload is disabled."}
 
-        assert self.settings.langchain_api_key
+        assert self.settings.langsmith_api_key
         from langsmith import Client
 
-        experiment_name = "shopper-{eval_name}-{timestamp}".format(
-            eval_name=eval_name,
-            timestamp=datetime.utcnow().strftime("%Y%m%d-%H%M%S"),
-        )
-        client = Client(api_key=self.settings.langchain_api_key)
-        client.create_project(
-            project_name=experiment_name,
-            description="Phase 1 evaluation run for {name}".format(name=eval_name),
-            upsert=True,
-            metadata={"phase": "phase1", "eval_name": eval_name},
-        )
+        project_name = self.settings.langsmith_project
+        client = Client(api_key=self.settings.langsmith_api_key)
+        if not client.has_project(project_name):
+            client.create_project(
+                project_name=project_name,
+                description="Phase 1 evaluation run for {name}".format(name=eval_name),
+                metadata={"phase": "phase1", "eval_name": eval_name},
+            )
         for result in results:
             run_id = uuid4()
             client.create_run(
-                name=result["case_id"],
+                name="eval:{eval_name}:{case_id}".format(eval_name=eval_name, case_id=result["case_id"]),
                 run_type="chain",
                 inputs={"profile": result["profile"]},
                 outputs={"nutrition_plan": result["nutrition_plan"]},
-                project_name=experiment_name,
+                project_name=project_name,
                 id=run_id,
                 extra={"metadata": {"phase": "phase1", "eval_name": eval_name}},
             )
@@ -106,4 +102,4 @@ class EvaluationRunner:
                 score=1 if result["passed"] else 0,
                 comment="; ".join(result["issues"]) if result["issues"] else "passed",
             )
-        return {"kind": "uploaded", "experiment_name": experiment_name}
+        return {"kind": "uploaded", "project_name": project_name}

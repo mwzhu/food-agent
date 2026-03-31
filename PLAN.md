@@ -622,7 +622,7 @@ FastAPI app with run-centric API, PostgreSQL, the planning subgraph (determinist
 - `src/shopper/config.py` — pydantic-settings loading from `.env`
 - `src/shopper/main.py` — FastAPI app factory
 - `docker-compose.yml` — PostgreSQL
-- LangSmith tracing enabled via env vars (`LANGCHAIN_TRACING_V2=true`, `LANGCHAIN_API_KEY`, `LANGCHAIN_PROJECT`)
+- LangSmith tracing enabled via env vars (`LANGSMITH_TRACING=true`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`)
 
 **2. Database + models**
 - `src/shopper/models/user.py` — `UserProfile` (age, weight_lbs, height_in, sex, activity_level, goal, dietary_restrictions, allergies, budget_weekly, household_size, cooking_skill, schedule_json)
