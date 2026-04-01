@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, Literal, Optional
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from shopper.schemas.common import PlannerStateSnapshot, RunLifecycleStatus
 from shopper.schemas.user import UserProfileBase
 
 
@@ -16,8 +17,8 @@ class RunCreateRequest(BaseModel):
 class RunRead(BaseModel):
     run_id: str
     user_id: str
-    status: Literal["running", "completed"]
-    state_snapshot: Dict[str, Any]
+    status: RunLifecycleStatus
+    state_snapshot: PlannerStateSnapshot
     created_at: datetime
     updated_at: datetime
 

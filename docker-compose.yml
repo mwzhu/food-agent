@@ -18,5 +18,14 @@ services:
       timeout: 5s
       retries: 5
 
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: shopper-qdrant
+    ports:
+      - "6333:6333"
+    volumes:
+      - shopper-qdrant-data:/qdrant/storage
+
 volumes:
   shopper-postgres-data:
+  shopper-qdrant-data:

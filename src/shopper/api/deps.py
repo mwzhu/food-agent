@@ -16,6 +16,10 @@ def get_graph(request: Request):
     return request.app.state.graph
 
 
+def get_run_manager(request: Request):
+    return request.app.state.run_manager
+
+
 async def get_db_session(request: Request) -> AsyncIterator[AsyncSession]:
     async with request.app.state.session_factory() as session:
         yield session

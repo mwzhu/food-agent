@@ -30,10 +30,10 @@ export function Nav() {
         </Link>
         <div>
           <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">
-            Phase 1 planner
+            Phase 2 planner
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Nutrition-first meal planning with traceable runs.
+            Retrieval-backed meal planning with traceable runs.
           </p>
         </div>
       </div>

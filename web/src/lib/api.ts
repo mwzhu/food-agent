@@ -87,3 +87,7 @@ export function getRun(runId: string): Promise<RunRead> {
 export function getRunTrace(runId: string): Promise<RunTraceRead> {
   return request<RunTraceRead>(`/v1/runs/${runId}/trace`);
 }
+
+export function getRunStreamUrl(runId: string): string {
+  return `${API_BASE_URL}/v1/runs/${runId}/stream`;
+}

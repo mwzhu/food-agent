@@ -1,13 +1,42 @@
-from shopper.schemas.common import ContextMetadata, MealSlot, NutritionPlan, PlannerStateSnapshot
+from shopper.schemas.common import (
+    ContextMetadata,
+    CriticVerdict,
+    MealSlot,
+    MealType,
+    NutritionPlan,
+    PhaseName,
+    PhaseStatus,
+    PhaseStatuses,
+    PlannerStateSnapshot,
+    PreferenceSummary,
+    RecipeIngredient,
+    RecipeRecord,
+    RunEvent,
+    RunEventType,
+    RunLifecycleStatus,
+    TraceMetadata,
+)
 from shopper.schemas.run import RunCreateRequest, RunRead, RunTraceRead
 from shopper.schemas.user import UserProfileBase, UserProfileCreate, UserProfileRead, UserProfileUpdate
 
 __all__ = [
     "ContextMetadata",
+    "CriticVerdict",
     "MealSlot",
+    "MealType",
     "NutritionPlan",
+    "PhaseName",
+    "PhaseStatus",
+    "PhaseStatuses",
     "PlannerStateSnapshot",
+    "PreferenceSummary",
+    "RecipeIngredient",
+    "RecipeRecord",
     "RunCreateRequest",
+    "RunEvent",
+    "RunEventType",
+    "RunLifecycleStatus",
+    "TraceMetadata",
     "RunRead",
     "RunTraceRead",
     "UserProfileBase",
