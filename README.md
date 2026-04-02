@@ -11,6 +11,10 @@ This repository now matches the Phase 1 plan in `PLAN.md`:
 - memory/context scaffolding with LangSmith-friendly context metadata
 - initial nutrition evaluation harness and CLI
 
-The app runs fully offline by default. LangSmith tracing works in local mode
-through local trace IDs, and remote LangSmith logging/experiments turn on only
-when `LANGSMITH_TRACING`, `LANGSMITH_PROJECT`, and `LANGSMITH_API_KEY` are set.
+The app runs fully offline by default. Local runs still get a local trace ID,
+and remote LangSmith tracing turns on when `LANGSMITH_TRACING`,
+`LANGSMITH_PROJECT`, and `LANGSMITH_API_KEY` are set. When enabled, planner
+invocations use LangSmith's tracing context so LangGraph can emit nested
+node/tool/LLM spans instead of a single manually posted top-level run. Legacy
+`LANGCHAIN_TRACING_V2`, `LANGCHAIN_PROJECT`, and `LANGCHAIN_API_KEY` env vars
+are also accepted.

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useEffectEvent, useState } from "react";
+import { useEffect, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { subscribeToRun } from "@/lib/sse";
@@ -36,54 +36,50 @@ export function useRunStream(runId: string | null): StreamState {
     setCurrentPhase(cachedRun?.state_snapshot.current_phase ?? null);
   }, [queryClient, runId]);
 
-  const handleEvent = useEffectEvent((event: RunEvent) => {
-    if (!runId) {
-      return;
-    }
-
-    setEvents((previousEvents) => {
-      if (previousEvents.some((existingEvent) => existingEvent.event_id === event.event_id)) {
-        return previousEvents;
-      }
-      const nextEvents = [...previousEvents, event];
-      queryClient.setQueryData(["run-events", runId], nextEvents);
-      return nextEvents;
-    });
-
-    setCurrentPhase((previousPhase) => event.phase ?? previousPhase);
-    setStatus(deriveRunStatus(event));
-
-    queryClient.setQueryData<RunRead | undefined>(["run", runId], (currentRun) => {
-      if (!currentRun) {
-        return currentRun;
-      }
-
-      const nextSnapshot = applyEventToSnapshot(currentRun.state_snapshot, event);
-      return {
-        ...currentRun,
-        status: deriveRunStatus(event),
-        state_snapshot: nextSnapshot,
-      };
-    });
-
-    if (isTerminalEvent(event)) {
-      setIsStreaming(false);
-      void queryClient.invalidateQueries({ queryKey: ["run", runId] });
-      void queryClient.invalidateQueries({ queryKey: ["runs"] });
-    }
-  });
-
   useEffect(() => {
     if (!runId) {
       return;
     }
+
+    const handleEvent = (event: RunEvent) => {
+      setEvents((previousEvents) => {
+        if (previousEvents.some((existingEvent) => existingEvent.event_id === event.event_id)) {
+          return previousEvents;
+        }
+        const nextEvents = [...previousEvents, event];
+        queryClient.setQueryData(["run-events", runId], nextEvents);
+        return nextEvents;
+      });
+
+      setCurrentPhase((previousPhase) => event.phase ?? previousPhase);
+      setStatus(deriveRunStatus(event));
+
+      queryClient.setQueryData<RunRead | undefined>(["run", runId], (currentRun) => {
+        if (!currentRun) {
+          return currentRun;
+        }
+
+        const nextSnapshot = applyEventToSnapshot(currentRun.state_snapshot, event);
+        return {
+          ...currentRun,
+          status: deriveRunStatus(event),
+          state_snapshot: nextSnapshot,
+        };
+      });
+
+      if (isTerminalEvent(event)) {
+        setIsStreaming(false);
+        void queryClient.invalidateQueries({ queryKey: ["run", runId] });
+        void queryClient.invalidateQueries({ queryKey: ["runs"] });
+      }
+    };
 
     const eventSource = subscribeToRun(runId, handleEvent, setIsStreaming);
     return () => {
       eventSource.close();
       setIsStreaming(false);
     };
-  }, [handleEvent, runId]);
+  }, [queryClient, runId]);
 
   return { events, isStreaming, status, currentPhase };
 }

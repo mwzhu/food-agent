@@ -1,38 +1,43 @@
 Metadata-Version: 2.4
 Name: shopper
 Version: 0.1.0
-Summary: Bounded-autonomy meal planner and grocery agent
+Summary: AI meal planner and grocery shopping agent
 Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 Requires-Dist: aiosqlite>=0.20.0
+Requires-Dist: alembic>=1.14.0
+Requires-Dist: asyncpg>=0.30.0
 Requires-Dist: fastapi<1.0.0,>=0.128.0
 Requires-Dist: httpx>=0.28.0
+Requires-Dist: langchain-anthropic>=0.3.0
 Requires-Dist: langchain-core>=0.3.0
+Requires-Dist: langchain-openai>=0.3.0
 Requires-Dist: langgraph>=0.2.0
 Requires-Dist: langsmith>=0.3.0
 Requires-Dist: pydantic<3.0.0,>=2.12.0
 Requires-Dist: pydantic-settings>=2.8.0
-Requires-Dist: qdrant-client>=1.12.0
+Requires-Dist: qdrant-client>=1.16.0
+Requires-Dist: python-dotenv>=1.0.0
+Requires-Dist: sentence-transformers>=3.0.0
 Requires-Dist: sqlalchemy<3.0.0,>=2.0.0
+Requires-Dist: tiktoken>=0.9.0
 Requires-Dist: uvicorn>=0.30.0
-Provides-Extra: browser
-Requires-Dist: browser-use>=0.3.0; extra == "browser"
-Requires-Dist: playwright>=1.52.0; extra == "browser"
 Provides-Extra: dev
 Requires-Dist: pytest>=8.0.0; extra == "dev"
 
 # Shopper
 
-Backend-first bounded-autonomy meal planner and grocery agent.
+Phase 1 of the AI meal planner and grocery shopping agent is implemented here.
 
-This scaffold implements:
+This repository now matches the Phase 1 plan in `PLAN.md`:
 
-- a run-centric FastAPI API
-- LangGraph-backed orchestration for planning and shopping
-- deterministic nutrition, grocery, pricing, and verification services
-- a memory/context subsystem with canonical facts plus episodic memory
-- approval-gated mock browser execution for Walmart
+- FastAPI app with run-centric `POST /v1/runs` and `GET /v1/runs/{run_id}`
+- packaged SQLAlchemy models and Pydantic schemas
+- LangGraph planning flow with `supervisor -> planning_subgraph -> end`
+- deterministic nutrition math plus a prompt-driven Phase 1 meal-selector stub
+- memory/context scaffolding with LangSmith-friendly context metadata
+- initial nutrition evaluation harness and CLI
 
-The browser and retrieval integrations are mocked by default so the core
-architecture is runnable without external credentials.
-
+The app runs fully offline by default. LangSmith tracing works in local mode
+through local trace IDs, and remote LangSmith logging/experiments turn on only
+when `LANGSMITH_TRACING`, `LANGSMITH_PROJECT`, and `LANGSMITH_API_KEY` are set.

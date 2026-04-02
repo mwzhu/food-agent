@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
@@ -20,7 +19,7 @@ from shopper.retrieval import QdrantRecipeStore, RecipeReranker
 
 
 TraceSource = Literal["api", "eval", "setup"]
-MAX_REPLAN_LOOPS = 3
+MAX_REPLAN_LOOPS = 1
 
 
 def _phase_statuses(memory: str, planning: str) -> dict[str, str]:
@@ -29,6 +28,31 @@ def _phase_statuses(memory: str, planning: str) -> dict[str, str]:
         "planning": planning,
         "shopping": "locked",
         "checkout": "locked",
+    }
+
+
+def _graph_invoke_config(state: Dict[str, Any], source: TraceSource) -> Dict[str, Any]:
+    metadata = {
+        "phase": "phase2",
+        "source": source,
+        "shopper_run_id": state["run_id"],
+        "user_id": state["user_id"],
+    }
+    return {
+        "run_name": "{source}:planner_graph".format(source=source),
+        "tags": ["shopper", source],
+        "metadata": metadata,
+    }
+
+
+def _trace_outputs_summary(result: Dict[str, Any]) -> Dict[str, Any]:
+    critic_verdict = result.get("critic_verdict") or {}
+    return {
+        "status": result.get("status"),
+        "current_phase": result.get("current_phase"),
+        "current_node": result.get("current_node"),
+        "selected_meal_count": len(result.get("selected_meals", [])),
+        "critic_passed": critic_verdict.get("passed"),
     }
 
 
@@ -201,51 +225,53 @@ async def invoke_planner_graph(
     source: TraceSource,
     event_emitter: Optional[EventEmitter] = None,
 ) -> Dict[str, Any]:
-    trace_id = uuid4()
-    start_time = datetime.now(timezone.utc)
     trace_metadata = {
         "kind": "local",
         "project": settings.langsmith_project,
-        "trace_id": str(trace_id),
+        "trace_id": str(uuid4()),
         "source": source,
     }
+    state["trace_metadata"] = trace_metadata
+    invoke_config = _graph_invoke_config(state, source)
+
+    async def invoke_graph() -> Dict[str, Any]:
+        if event_emitter is not None:
+            with bind_event_emitter(event_emitter):
+                return await graph.ainvoke(state, config=invoke_config)
+        return await graph.ainvoke(state, config=invoke_config)
+
     if settings.langsmith_tracing:
-        assert settings.langsmith_api_key
-        from langsmith import Client
+        if not settings.langsmith_api_key:
+            raise ValueError("LANGSMITH_API_KEY is required when LANGSMITH_TRACING is enabled.")
+
+        from langsmith import Client, trace, tracing_context
 
         client = Client(api_key=settings.langsmith_api_key)
-        client.create_run(
-            name="{source}:planner_run".format(source=source),
-            run_type="chain",
+        metadata = dict(invoke_config["metadata"])
+        trace_inputs = {
+            "run_id": state["run_id"],
+            "user_id": state["user_id"],
+            "source": source,
+        }
+
+        with tracing_context(
+            enabled=True,
+            client=client,
             project_name=settings.langsmith_project,
-            id=UUID(str(trace_id)),
-            inputs=state,
-            start_time=start_time,
-            extra={
-                "metadata": {
-                    "phase": "phase2",
-                    "source": source,
-                }
-            },
-        )
-    if event_emitter is not None:
-        with bind_event_emitter(event_emitter):
-            result = await graph.ainvoke(state)
+            tags=list(invoke_config["tags"]),
+            metadata=metadata,
+        ):
+            async with trace(
+                name="{source}:planner_run".format(source=source),
+                run_type="chain",
+                inputs=trace_inputs,
+            ) as root_run:
+                trace_metadata["kind"] = "remote"
+                trace_metadata["trace_id"] = str(root_run.trace_id)
+                result = await invoke_graph()
+                root_run.end(outputs=_trace_outputs_summary(result))
     else:
-        result = await graph.ainvoke(state)
-    if settings.langsmith_tracing:
-        client.update_run(
-            run_id=UUID(str(trace_id)),
-            end_time=datetime.now(timezone.utc),
-            outputs=result,
-            extra={
-                "metadata": {
-                    "phase": "phase2",
-                    "source": source,
-                    "context_metadata": result["context_metadata"],
-                }
-            },
-        )
-        trace_metadata["kind"] = "remote"
+        result = await invoke_graph()
+
     result["trace_metadata"] = trace_metadata
     return result

@@ -20,9 +20,20 @@ export function subscribeToRun(
   const eventSource = new EventSource(getRunStreamUrl(runId));
 
   const handleTypedEvent = (event: Event) => {
-    const messageEvent = event as MessageEvent<string>;
-    const payload = JSON.parse(messageEvent.data) as RunEvent;
-    onEvent(payload);
+    if (!(event instanceof MessageEvent) || typeof event.data !== "string" || event.data.length === 0) {
+      return;
+    }
+
+    try {
+      const payload = JSON.parse(event.data) as RunEvent;
+      onEvent(payload);
+    } catch (error) {
+      console.error("Failed to parse run stream event.", {
+        error,
+        eventType: event.type,
+        rawData: event.data,
+      });
+    }
   };
 
   RUN_EVENT_TYPES.forEach((eventType) => {
