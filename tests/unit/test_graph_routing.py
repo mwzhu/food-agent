@@ -11,7 +11,7 @@ def test_supervisor_routes_replans_back_to_planning():
     assert route_from_supervisor({"replan_count": 1}) == "planning_subgraph"
 
 
-def test_critic_routes_failed_verdicts_to_substitution_until_limit():
-    assert route_from_critic({"critic_verdict": {"passed": False}, "replan_count": 0}, max_replans=3) == "substitution"
+def test_critic_routes_failed_verdicts_back_to_planning_until_limit():
+    assert route_from_critic({"critic_verdict": {"passed": False}, "replan_count": 0}, max_replans=3) == "planning_subgraph"
     assert route_from_critic({"critic_verdict": {"passed": False}, "replan_count": 3}, max_replans=3) == "end"
     assert route_from_critic({"critic_verdict": {"passed": True}, "replan_count": 1}, max_replans=3) == "end"

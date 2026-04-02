@@ -21,4 +21,4 @@ def route_from_critic(state: Dict[str, Any], max_replans: int = 3) -> str:
         return "end"
     if state["replan_count"] >= max_replans:
         return "end"
-    return "substitution"
+    return "planning_subgraph"

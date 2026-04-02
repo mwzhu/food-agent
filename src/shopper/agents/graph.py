@@ -8,7 +8,8 @@ from langchain_core.messages import HumanMessage
 from langgraph.graph import END, START, StateGraph
 
 from shopper.agents.events import EventEmitter, bind_event_emitter, emit_run_event
-from shopper.agents.nodes import LoadMemoryNode, SubstitutionNode
+from shopper.agents.nodes import LoadMemoryNode
+from shopper.agents.replan import derive_replan_feedback
 from shopper.agents.state import PlannerState, PlanningSubgraphState
 from shopper.agents.subgraphs import build_critic_subgraph, build_planning_subgraph
 from shopper.agents.supervisor import route_from_critic, route_from_supervisor, supervisor_node
@@ -40,7 +41,6 @@ def build_planner_graph(
 ):
     recipe_search = RecipeSearchTool(recipe_store=recipe_store, reranker=reranker or RecipeReranker())
     load_memory_node = LoadMemoryNode(context_assembler=context_assembler, memory_store=memory_store)
-    substitution_node = SubstitutionNode(chat_model=chat_model)
     planning_subgraph = build_planning_subgraph(
         context_assembler=context_assembler,
         recipe_search=recipe_search,
@@ -77,29 +77,48 @@ def build_planner_graph(
         }
 
     async def planning_subgraph_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        is_replan = bool(state.get("critic_verdict")) and not bool(state["critic_verdict"]["passed"])
+        replan_feedback = derive_replan_feedback(state) if is_replan else {}
+        planning_state = {**state, **replan_feedback}
         await emit_run_event(
             run_id=state["run_id"],
             event_type="phase_started",
             phase="planning",
             node_name="planning_subgraph",
-            message="Planning meals from the nutrition target and retrieval results.",
+            message=(
+                "Replanning meals from critic feedback."
+                if is_replan
+                else "Planning meals from the nutrition target and retrieval results."
+            ),
+            data={"replan_count": planning_state.get("replan_count", 0)},
         )
         result = await planning_subgraph.ainvoke(
             PlanningSubgraphState(
-                run_id=state["run_id"],
-                user_id=state["user_id"],
-                user_profile=state["user_profile"],
-                user_preferences_learned=state["user_preferences_learned"],
-                retrieved_memories=state["retrieved_memories"],
-                repair_instructions=state["repair_instructions"],
-                blocked_recipe_ids=state["blocked_recipe_ids"],
-                avoid_cuisines=state["avoid_cuisines"],
+                run_id=planning_state["run_id"],
+                user_id=planning_state["user_id"],
+                user_profile=planning_state["user_profile"],
+                user_preferences_learned=planning_state["user_preferences_learned"],
+                retrieved_memories=planning_state["retrieved_memories"],
+                critic_verdict=planning_state.get("critic_verdict"),
+                repair_instructions=planning_state["repair_instructions"],
+                blocked_recipe_ids=planning_state["blocked_recipe_ids"],
+                avoid_cuisines=planning_state["avoid_cuisines"],
+                replan_count=planning_state.get("replan_count", 0),
                 context_metadata=[],
-                selected_meals=[],
-                messages=[HumanMessage(content="Create a 7 day nutrition-aligned meal plan.")],
+                selected_meals=planning_state.get("selected_meals", []),
+                messages=[
+                    HumanMessage(
+                        content=(
+                            "Revise the 7 day nutrition-aligned meal plan using the latest critic feedback."
+                            if is_replan
+                            else "Create a 7 day nutrition-aligned meal plan."
+                        )
+                    )
+                ],
             )
         )
         return {
+            **replan_feedback,
             "nutrition_plan": result["nutrition_plan"],
             "selected_meals": result["selected_meals"],
             "context_metadata": result["context_metadata"],
@@ -148,15 +167,11 @@ def build_planner_graph(
             "trace_metadata": state["trace_metadata"],
         }
 
-    async def substitution_wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
-        return await substitution_node(state)
-
     graph = StateGraph(PlannerState)
     graph.add_node("supervisor", supervisor_node)
     graph.add_node("load_memory", load_memory_wrapper)
     graph.add_node("planning_subgraph", planning_subgraph_node)
     graph.add_node("critic_subgraph", critic_subgraph_node)
-    graph.add_node("substitution", substitution_wrapper)
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
         "supervisor",
@@ -172,11 +187,10 @@ def build_planner_graph(
         "critic_subgraph",
         lambda state: route_from_critic(state, max_replans=MAX_REPLAN_LOOPS),
         {
-            "substitution": "substitution",
+            "planning_subgraph": "planning_subgraph",
             "end": END,
         },
     )
-    graph.add_edge("substitution", "supervisor")
     return graph.compile()
 
 

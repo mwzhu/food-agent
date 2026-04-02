@@ -1,18 +1,51 @@
 from __future__ import annotations
 
 import asyncio
+import json
+from types import SimpleNamespace
 
-from shopper.agents.nodes.meal_selector import MealRequest, MealSelectorInputs, MealSelectorNode
-from shopper.schemas import NutritionPlan, PreferenceSummary, RecipeIngredient, RecipeRecord
-from shopper.schemas.user import UserProfileBase
+from shopper.agents.nodes.meal_selector import MealSelectorNode
+from shopper.schemas import RecipeIngredient, RecipeRecord
 
 
 class FakeRecipeSearchTool:
-    def __init__(self, candidates):
-        self.candidates = candidates
+    def __init__(self):
+        self.calls = []
 
     async def search(self, query, filters=None, top_k=5, context=None):
-        return self.candidates
+        slot_index = len(self.calls)
+        meal_type = filters["meal_type"]
+        cuisine = "thai" if "thai" in query else "american"
+        self.calls.append({"query": query, "filters": filters, "context": context})
+        return [
+            {
+                "recipe": _recipe(
+                    recipe_id=f"{meal_type}-{slot_index}-{candidate_index}",
+                    name=f"{meal_type.title()} Candidate {candidate_index}",
+                    cuisine="thai" if candidate_index >= 3 else cuisine,
+                    calories=520 - (candidate_index * 10),
+                    protein_g=35 + candidate_index,
+                    meal_type=meal_type,
+                ).model_dump(mode="json"),
+                "rerank_score": round(0.98 - (candidate_index * 0.03), 2),
+                "reasons": ["top rank" if candidate_index == 0 else "alternate fit"],
+            }
+            for candidate_index in range(6)
+        ]
+
+
+class FakeContextAssembler:
+    async def build_context(self, node_name, state):
+        return SimpleNamespace(
+            payload={"preference_summary": state["user_preferences_learned"]},
+            budget=SimpleNamespace(
+                tokens_used=128,
+                token_budget=3200,
+                fields_included=["preference_summary"],
+                fields_dropped=[],
+            ),
+            retrieved_memories=[],
+        )
 
 
 class FakeStructuredModel:
@@ -23,7 +56,8 @@ class FakeStructuredModel:
 
     async def ainvoke(self, messages):
         self.calls.append(messages)
-        return self.schema.model_validate(self.response)
+        response = self.response(messages) if callable(self.response) else self.response
+        return self.schema.model_validate(response)
 
 
 class FakeChatModel:
@@ -35,12 +69,19 @@ class FakeChatModel:
         return FakeStructuredModel(schema=schema, response=self.response, calls=self.calls)
 
 
-def _recipe(recipe_id: str, name: str, cuisine: str, calories: int, protein_g: int) -> RecipeRecord:
+def _recipe(
+    recipe_id: str,
+    name: str,
+    cuisine: str,
+    calories: int,
+    protein_g: int,
+    meal_type: str = "lunch",
+) -> RecipeRecord:
     return RecipeRecord(
         recipe_id=recipe_id,
         name=name,
         cuisine=cuisine,
-        meal_types=["lunch"],
+        meal_types=[meal_type],
         ingredients=[RecipeIngredient(name="chicken breast"), RecipeIngredient(name="rice")],
         prep_time_min=20,
         calories=calories,
@@ -53,18 +94,8 @@ def _recipe(recipe_id: str, name: str, cuisine: str, calories: int, protein_g: i
     )
 
 
-def test_meal_selector_uses_llm_choice_for_slot_selection():
-    first_recipe = _recipe("first-choice", "Default Bowl", "american", 520, 35)
-    llm_recipe = _recipe("llm-choice", "Thai Chicken Bowl", "thai", 500, 36)
-    recipe_search = FakeRecipeSearchTool(
-        [
-            {"recipe": first_recipe.model_dump(mode="json"), "rerank_score": 0.98, "reasons": ["top rank"]},
-            {"recipe": llm_recipe.model_dump(mode="json"), "rerank_score": 0.81, "reasons": ["preferred cuisine"]},
-        ]
-    )
-    chat_model = FakeChatModel({"recipe_id": "llm-choice", "rationale": "Thai flavor matches the learned preference."})
-    node = MealSelectorNode(context_assembler=None, recipe_search=recipe_search, chat_model=chat_model)
-    state = {
+def _state():
+    return {
         "run_id": "selector-run",
         "user_profile": {
             "age": 31,
@@ -80,47 +111,81 @@ def test_meal_selector_uses_llm_choice_for_slot_selection():
             "cooking_skill": "intermediate",
             "schedule_json": {"weekdays": "quick"},
         },
+        "nutrition_plan": {
+            "tdee": 2400,
+            "daily_calories": 2400,
+            "protein_g": 180,
+            "carbs_g": 220,
+            "fat_g": 80,
+            "fiber_g": 30,
+            "goal": "maintain",
+            "applied_restrictions": [],
+            "notes": "",
+        },
         "user_preferences_learned": {"preferred_cuisines": ["thai"], "avoided_ingredients": []},
         "repair_instructions": [],
         "blocked_recipe_ids": [],
         "avoid_cuisines": [],
+        "retrieved_memories": [],
     }
-    profile = UserProfileBase.model_validate(state["user_profile"])
-    nutrition_plan = NutritionPlan(
-        tdee=2400,
-        daily_calories=2400,
-        protein_g=180,
-        carbs_g=220,
-        fat_g=80,
-        fiber_g=30,
-        goal="maintain",
-        applied_restrictions=[],
-        notes="",
-    )
 
-    meal, decision_source = asyncio.run(
-        node._select_meal_for_slot(
-            profile=profile,
-            nutrition_plan=nutrition_plan,
-            slot=MealRequest(
-                day="monday",
-                day_index=0,
-                meal_type="lunch",
-                max_prep_time=20,
-                query="maintain lunch high protein quick thai",
-            ),
-            inputs=MealSelectorInputs(
-                preferences=PreferenceSummary.model_validate(state["user_preferences_learned"]),
-                repair_instructions=[],
-                blocked_recipe_ids=set(),
-                avoid_cuisines=set(),
-            ),
-            selected_meals=[],
-            prompt_template="Choose from the candidates only.",
-            assembled_context={"preference_summary": state["user_preferences_learned"]},
-        )
-    )
 
-    assert decision_source == "llm"
-    assert meal.recipe_id == "llm-choice"
-    assert chat_model.calls, "Expected the selector to invoke the chat model."
+def _weekly_response(messages):
+    payload = json.loads(messages[-1].content)
+    for slot in payload["meal_slots"]:
+        assert len(slot["candidates"]) == 4
+        for candidate in slot["candidates"]:
+            assert "carbs_g" in candidate
+            assert "fat_g" in candidate
+            assert "projected_carbs_g" in candidate
+            assert "projected_fat_g" in candidate
+    return {
+        "selections": [
+            {
+                "slot_id": slot["slot_id"],
+                "recipe_id": slot["candidates"][3]["recipe_id"],
+                "rationale": "Preferred cuisine improves week-level fit.",
+            }
+            for slot in payload["meal_slots"]
+        ]
+    }
+
+
+def test_meal_selector_uses_one_llm_call_for_the_whole_week():
+    recipe_search = FakeRecipeSearchTool()
+    chat_model = FakeChatModel(_weekly_response)
+    node = MealSelectorNode(
+        context_assembler=FakeContextAssembler(),
+        recipe_search=recipe_search,
+        chat_model=chat_model,
+    )
+    state = _state()
+
+    result = asyncio.run(node(state))
+
+    assert len(recipe_search.calls) == 28
+    assert len(chat_model.calls) == 1
+    assert len(result["selected_meals"]) == 28
+    assert all(meal["recipe_id"].endswith("-3") for meal in result["selected_meals"])
+
+
+def test_meal_selector_falls_back_when_weekly_llm_response_is_incomplete():
+    def incomplete_response(messages):
+        weekly_response = _weekly_response(messages)
+        weekly_response["selections"] = weekly_response["selections"][:-1]
+        return weekly_response
+
+    recipe_search = FakeRecipeSearchTool()
+    chat_model = FakeChatModel(incomplete_response)
+    node = MealSelectorNode(
+        context_assembler=FakeContextAssembler(),
+        recipe_search=recipe_search,
+        chat_model=chat_model,
+    )
+    state = _state()
+
+    result = asyncio.run(node(state))
+
+    assert len(chat_model.calls) == 1
+    assert len(result["selected_meals"]) == 28
+    assert all(meal["recipe_id"].endswith("-0") for meal in result["selected_meals"])
