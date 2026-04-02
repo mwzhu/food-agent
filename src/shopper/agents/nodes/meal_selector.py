@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from pydantic import BaseModel, Field
 
+from shopper.agents.events import emit_run_event
+from shopper.agents.llm import invoke_structured
+from shopper.agents.tools import RecipeSearchTool
 from shopper.memory import ContextAssembler
-from shopper.schemas.common import ContextMetadata, MealSlot, NutritionPlan
+from shopper.schemas import ContextMetadata, MealSlot, MealType, NutritionPlan, PreferenceSummary, RecipeRecord
 from shopper.schemas.user import UserProfileBase
+from shopper.validators import expand_allergy_terms
 
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "meal_selector.md"
@@ -21,43 +27,103 @@ DAYS = [
     "saturday",
     "sunday",
 ]
-
-MEAL_LIBRARY = {
-    "breakfast": [
-        {"recipe_name": "Protein Overnight Oats", "prep_time_min": 10, "tags": ["vegetarian"]},
-        {"recipe_name": "Greek Yogurt Berry Bowl", "prep_time_min": 5, "tags": ["vegetarian"]},
-        {"recipe_name": "Egg and Avocado Toast", "prep_time_min": 12, "tags": []},
-    ],
-    "lunch": [
-        {"recipe_name": "Chicken Quinoa Prep Bowl", "prep_time_min": 15, "tags": []},
-        {"recipe_name": "Lentil Power Salad", "prep_time_min": 15, "tags": ["vegetarian", "vegan"]},
-        {"recipe_name": "Turkey Hummus Wrap", "prep_time_min": 10, "tags": []},
-    ],
-    "dinner": [
-        {"recipe_name": "Sheet Pan Herb Chicken", "prep_time_min": 30, "tags": []},
-        {"recipe_name": "Tofu Vegetable Stir Fry", "prep_time_min": 25, "tags": ["vegetarian", "vegan"]},
-        {"recipe_name": "Salmon Rice Bowl", "prep_time_min": 25, "tags": []},
-    ],
+MEAL_TARGET_SPLITS = {
+    "breakfast": 0.24,
+    "lunch": 0.30,
+    "dinner": 0.36,
+    "snack": 0.10,
 }
 
-CALORIE_SPLITS = {
-    "breakfast": 0.25,
-    "lunch": 0.35,
-    "dinner": 0.40,
-}
+
+class MealSelectionDecision(BaseModel):
+    recipe_id: str
+    rationale: str = Field(default="")
+
+
+@dataclass(frozen=True)
+class MealRequest:
+    day: str
+    day_index: int
+    meal_type: MealType
+    max_prep_time: int
+    query: str
+
+
+@dataclass(frozen=True)
+class MealSelectorInputs:
+    preferences: PreferenceSummary
+    repair_instructions: list[str]
+    blocked_recipe_ids: set[str]
+    avoid_cuisines: set[str]
 
 
 @dataclass
 class MealSelectorNode:
     context_assembler: ContextAssembler
+    recipe_search: RecipeSearchTool
+    chat_model: Optional[Any] = None
 
     async def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        await emit_run_event(
+            run_id=state["run_id"],
+            event_type="node_entered",
+            phase="planning",
+            node_name="meal_selector",
+            message="Searching the recipe corpus and composing a weekly meal plan.",
+        )
+
         profile = UserProfileBase.model_validate(state["user_profile"])
         nutrition_plan = NutritionPlan.model_validate(state["nutrition_plan"])
+        inputs = MealSelectorInputs(
+            preferences=PreferenceSummary.model_validate(state["user_preferences_learned"]),
+            repair_instructions=list(state["repair_instructions"]),
+            blocked_recipe_ids=set(state["blocked_recipe_ids"]),
+            avoid_cuisines=set(state["avoid_cuisines"]),
+        )
+        context = await self.context_assembler.build_context("meal_selector", state)
         prompt_template = PROMPT_PATH.read_text(encoding="utf-8").strip()
         assert prompt_template
-        context = await self.context_assembler.build_context("meal_selector", state)
-        selected_meals = self._build_stub_plan(profile, nutrition_plan)
+
+        selected_meals: List[MealSlot] = []
+        llm_used = False
+        for day_index, day in enumerate(DAYS):
+            for meal_type in ("breakfast", "lunch", "dinner", "snack"):
+                slot = MealRequest(
+                    day=day,
+                    day_index=day_index,
+                    meal_type=meal_type,
+                    max_prep_time=self._prep_cap(profile, meal_type, day),
+                    query=self._build_query(profile, meal_type, day_index, inputs),
+                )
+                meal, decision_source = await self._select_meal_for_slot(
+                    profile=profile,
+                    nutrition_plan=nutrition_plan,
+                    slot=slot,
+                    inputs=inputs,
+                    selected_meals=selected_meals,
+                    prompt_template=prompt_template,
+                    assembled_context=context.payload,
+                )
+                selected_meals.append(meal)
+                llm_used = llm_used or decision_source == "llm"
+                await emit_run_event(
+                    run_id=state["run_id"],
+                    event_type="node_completed",
+                    phase="planning",
+                    node_name="meal_selector",
+                    message="Selected {recipe} for {day} {meal_type}.".format(
+                        recipe=meal.recipe_name,
+                        day=day.title(),
+                        meal_type=meal_type,
+                    ),
+                    data={
+                        "day": day,
+                        "meal_type": meal_type,
+                        "recipe_name": meal.recipe_name,
+                        "decision_source": decision_source,
+                    },
+                )
+
         metadata = ContextMetadata(
             node_name="meal_selector",
             tokens_used=context.budget.tokens_used,
@@ -68,13 +134,14 @@ class MealSelectorNode:
         )
 
         return {
-            "selected_meals": [meal.model_dump() for meal in selected_meals],
-            "context_metadata": [metadata.model_dump()],
+            "selected_meals": [meal.model_dump(mode="json") for meal in selected_meals],
+            "context_metadata": [metadata.model_dump(mode="json")],
             "messages": [
                 AIMessage(
                     content=(
-                        "Built a 7 day meal plan from prompt template {template}: {summary}"
+                        "Built a {mode} weekly plan using prompt template {template}: {summary}"
                     ).format(
+                        mode="LLM-guided" if llm_used else "retrieval-backed fallback",
                         template=PROMPT_PATH.name,
                         summary=prompt_template.splitlines()[0],
                     )
@@ -82,51 +149,358 @@ class MealSelectorNode:
             ],
         }
 
-    def _build_stub_plan(self, profile: UserProfileBase, nutrition_plan: NutritionPlan) -> List[MealSlot]:
-        plan: List[MealSlot] = []
-        restrictions = {item.lower() for item in profile.dietary_restrictions}
-        allergies = {item.lower() for item in profile.allergies}
-
-        for day_index, day in enumerate(DAYS):
-            for meal_type in ("breakfast", "lunch", "dinner"):
-                template = self._pick_template(meal_type, day_index, restrictions, allergies)
-                calories = int(round(nutrition_plan.daily_calories * CALORIE_SPLITS[meal_type]))
-                plan.append(
-                    MealSlot(
-                        day=day,
-                        meal_type=meal_type,
-                        recipe_id="phase1-{meal_type}-{day_index}".format(
-                            meal_type=meal_type,
-                            day_index=day_index + 1,
-                        ),
-                        recipe_name=template["recipe_name"],
-                        prep_time_min=int(template["prep_time_min"]),
-                        calories=calories,
-                        protein_g=int(round(nutrition_plan.protein_g * CALORIE_SPLITS[meal_type])),
-                        carbs_g=int(round(nutrition_plan.carbs_g * CALORIE_SPLITS[meal_type])),
-                        fat_g=int(round(nutrition_plan.fat_g * CALORIE_SPLITS[meal_type])),
-                    )
-                )
-        return plan
-
-    def _pick_template(
+    async def _select_meal_for_slot(
         self,
-        meal_type: str,
+        profile: UserProfileBase,
+        nutrition_plan: NutritionPlan,
+        slot: MealRequest,
+        inputs: MealSelectorInputs,
+        selected_meals: List[MealSlot],
+        prompt_template: str,
+        assembled_context: Dict[str, Any],
+    ) -> tuple[MealSlot, str]:
+        filters = {
+            "meal_type": slot.meal_type,
+            "max_prep_time": slot.max_prep_time,
+            "dietary_tags": profile.dietary_restrictions,
+            "excluded_ingredients": expand_allergy_terms(profile.allergies) + inputs.preferences.avoided_ingredients,
+        }
+        search_context = {
+            "preferred_cuisines": inputs.preferences.preferred_cuisines,
+            "avoided_ingredients": inputs.preferences.avoided_ingredients,
+            "avoid_cuisines": sorted(inputs.avoid_cuisines),
+            "blocked_recipe_ids": sorted(inputs.blocked_recipe_ids),
+            "max_prep_time": slot.max_prep_time,
+        }
+        candidates = await self.recipe_search.search(
+            query=slot.query,
+            filters=filters,
+            top_k=6,
+            context=search_context,
+        )
+        if not candidates:
+            relaxed_filters = dict(filters)
+            relaxed_filters.pop("max_prep_time", None)
+            candidates = await self.recipe_search.search(
+                query=slot.query,
+                filters=relaxed_filters,
+                top_k=6,
+                context=search_context,
+            )
+
+        recipe, decision_source = await self._pick_recipe(
+            candidates=candidates,
+            nutrition_plan=nutrition_plan,
+            slot=slot,
+            inputs=inputs,
+            selected_meals=selected_meals,
+            prompt_template=prompt_template,
+            assembled_context=assembled_context,
+        )
+        meal = self._build_meal_slot(
+            recipe=recipe,
+            nutrition_plan=nutrition_plan,
+            meal_type=slot.meal_type,
+            day=slot.day,
+        )
+        return meal, decision_source
+
+    def _build_query(
+        self,
+        profile: UserProfileBase,
+        meal_type: MealType,
         day_index: int,
-        restrictions: set,
-        allergies: set,
-    ) -> Dict[str, Any]:
-        templates = list(MEAL_LIBRARY[meal_type])
-        filtered = []
-        for template in templates:
-            tags = {tag.lower() for tag in template.get("tags", [])}
-            name = template["recipe_name"].lower()
-            if "vegetarian" in restrictions and "vegetarian" not in tags:
+        inputs: MealSelectorInputs,
+    ) -> str:
+        preferred_cuisines = inputs.preferences.preferred_cuisines
+        cuisine_hint = preferred_cuisines[day_index % len(preferred_cuisines)] if preferred_cuisines else ""
+        repair_hint = " ".join(inputs.repair_instructions)
+        schedule = "quick" if meal_type != "dinner" else "balanced"
+        parts = [
+            profile.goal,
+            meal_type,
+            "high protein" if meal_type != "snack" else "balanced snack",
+            schedule,
+            cuisine_hint,
+            repair_hint,
+        ]
+        return " ".join(part for part in parts if part).strip()
+
+    async def _pick_recipe(
+        self,
+        candidates: List[Dict[str, Any]],
+        nutrition_plan: NutritionPlan,
+        slot: MealRequest,
+        inputs: MealSelectorInputs,
+        selected_meals: List[MealSlot],
+        prompt_template: str,
+        assembled_context: Dict[str, Any],
+    ) -> tuple[RecipeRecord, str]:
+        if not candidates:
+            raise ValueError("Recipe search returned no candidates for {meal_type}.".format(meal_type=slot.meal_type))
+
+        candidate_recipes = [RecipeRecord.model_validate(candidate["recipe"]) for candidate in candidates]
+        llm_recipe = await self._pick_recipe_with_llm(
+            candidates=candidates,
+            candidate_recipes=candidate_recipes,
+            selected_meals=selected_meals,
+            nutrition_plan=nutrition_plan,
+            slot=slot,
+            inputs=inputs,
+            prompt_template=prompt_template,
+            assembled_context=assembled_context,
+        )
+        if llm_recipe is not None:
+            return llm_recipe, "llm"
+
+        return (
+            self._pick_best_recipe(
+                candidates=candidates,
+                selected_meals=selected_meals,
+                slot=slot,
+                inputs=inputs,
+            ),
+            "deterministic_fallback",
+        )
+
+    async def _pick_recipe_with_llm(
+        self,
+        candidates: List[Dict[str, Any]],
+        candidate_recipes: List[RecipeRecord],
+        selected_meals: List[MealSlot],
+        nutrition_plan: NutritionPlan,
+        slot: MealRequest,
+        inputs: MealSelectorInputs,
+        prompt_template: str,
+        assembled_context: Dict[str, Any],
+    ) -> Optional[RecipeRecord]:
+        if self.chat_model is None:
+            return None
+
+        recent_recipe_ids = {
+            meal.recipe_id
+            for meal in selected_meals
+            if meal.meal_type == slot.meal_type and meal.day in DAYS[max(0, slot.day_index - 2):slot.day_index]
+        }
+        recent_cuisines = {
+            meal.cuisine
+            for meal in selected_meals
+            if meal.day in DAYS[max(0, slot.day_index - 2):slot.day_index]
+        }
+        disallowed_recipe_ids = {
+            meal.recipe_id
+            for meal in selected_meals
+            if meal.macro_fit_score < 0.55
+        }
+        payload = {
+            "context": assembled_context,
+            "slot": {
+                "day": slot.day,
+                "meal_type": slot.meal_type,
+                "day_index": slot.day_index,
+                "meal_calorie_target": round(nutrition_plan.daily_calories * MEAL_TARGET_SPLITS[slot.meal_type]),
+                "meal_protein_target": round(nutrition_plan.protein_g * MEAL_TARGET_SPLITS[slot.meal_type]),
+                "max_prep_time": slot.max_prep_time,
+            },
+            "already_selected_meals": [self._meal_summary(meal) for meal in selected_meals[-8:]],
+            "constraints": {
+                "blocked_recipe_ids": sorted(inputs.blocked_recipe_ids | disallowed_recipe_ids),
+                "avoid_cuisines": sorted(inputs.avoid_cuisines),
+                "recent_recipe_ids_for_same_meal_type": sorted(recent_recipe_ids),
+                "recent_cuisines_within_two_days": sorted(cuisine for cuisine in recent_cuisines if cuisine),
+                "repair_instructions": inputs.repair_instructions,
+            },
+            "candidates": self._candidate_payload(candidates),
+        }
+        decision = await invoke_structured(
+            self.chat_model,
+            MealSelectionDecision,
+            [
+                SystemMessage(content=prompt_template),
+                HumanMessage(content=json.dumps(payload, indent=2, ensure_ascii=True)),
+            ],
+        )
+
+        if decision is None:
+            return None
+
+        for recipe in candidate_recipes:
+            if recipe.recipe_id != decision.recipe_id:
                 continue
-            if "vegan" in restrictions and "vegan" not in tags:
+            if recipe.recipe_id in inputs.blocked_recipe_ids or recipe.recipe_id in disallowed_recipe_ids:
+                return None
+            if recipe.cuisine in inputs.avoid_cuisines:
+                return None
+            return recipe
+
+        return None
+
+    def _candidate_payload(self, candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        payload: List[Dict[str, Any]] = []
+        for candidate in candidates:
+            recipe = RecipeRecord.model_validate(candidate["recipe"])
+            payload.append(
+                {
+                    "recipe_id": recipe.recipe_id,
+                    "name": recipe.name,
+                    "cuisine": recipe.cuisine,
+                    "prep_time_min": recipe.prep_time_min,
+                    "calories": recipe.calories,
+                    "protein_g": recipe.protein_g,
+                    "carbs_g": recipe.carbs_g,
+                    "fat_g": recipe.fat_g,
+                    "tags": recipe.tags,
+                    "rerank_score": candidate["rerank_score"],
+                    "reasons": candidate.get("reasons", []),
+                }
+            )
+        return payload
+
+    def _meal_summary(self, meal: MealSlot) -> Dict[str, Any]:
+        return {
+            "day": meal.day,
+            "meal_type": meal.meal_type,
+            "recipe_id": meal.recipe_id,
+            "recipe_name": meal.recipe_name,
+            "cuisine": meal.cuisine,
+            "prep_time_min": meal.prep_time_min,
+            "macro_fit_score": meal.macro_fit_score,
+        }
+
+    def _pick_best_recipe(
+        self,
+        candidates: List[Dict[str, Any]],
+        selected_meals: List[MealSlot],
+        slot: MealRequest,
+        inputs: MealSelectorInputs,
+    ) -> RecipeRecord:
+        if not candidates:
+            raise ValueError("Recipe search returned no candidates for {meal_type}.".format(meal_type=slot.meal_type))
+
+        candidate_recipes = [RecipeRecord.model_validate(candidate["recipe"]) for candidate in candidates]
+        recent_recipe_ids = {
+            meal.recipe_id
+            for meal in selected_meals
+            if meal.meal_type == slot.meal_type and meal.day in DAYS[max(0, slot.day_index - 2):slot.day_index]
+        }
+        recent_cuisines = {
+            meal.cuisine
+            for meal in selected_meals
+            if meal.day in DAYS[max(0, slot.day_index - 2):slot.day_index]
+        }
+        best_candidate = None
+        best_score = float("-inf")
+        disallowed_recipe_ids = {
+            meal.recipe_id
+            for meal in selected_meals
+            if meal.macro_fit_score < 0.55
+        }
+
+        strict_candidates = [
+            recipe
+            for recipe in candidate_recipes
+            if recipe.recipe_id not in inputs.blocked_recipe_ids
+            and recipe.recipe_id not in disallowed_recipe_ids
+            and recipe.recipe_id not in recent_recipe_ids
+            and recipe.cuisine not in recent_cuisines
+            and recipe.cuisine not in inputs.avoid_cuisines
+        ]
+        if strict_candidates:
+            return strict_candidates[0]
+
+        for candidate, recipe in zip(candidates, candidate_recipes):
+            score = float(candidate["rerank_score"])
+            if recipe.recipe_id in inputs.blocked_recipe_ids or recipe.recipe_id in disallowed_recipe_ids:
                 continue
-            if any(allergen in name for allergen in allergies):
-                continue
-            filtered.append(template)
-        chosen = filtered or templates
-        return chosen[day_index % len(chosen)]
+            if recipe.cuisine in inputs.avoid_cuisines:
+                score -= 0.45
+            if recipe.recipe_id in recent_recipe_ids:
+                score -= 0.6
+            if recipe.cuisine in recent_cuisines:
+                score -= 0.5
+            if any(previous.recipe_id == recipe.recipe_id for previous in selected_meals):
+                score -= 0.2
+            if score > best_score:
+                best_candidate = recipe
+                best_score = score
+
+        if best_candidate is None:
+            return candidate_recipes[0]
+        return best_candidate
+
+    def _build_meal_slot(
+        self,
+        recipe: RecipeRecord,
+        nutrition_plan: NutritionPlan,
+        meal_type: MealType,
+        day: str,
+    ) -> MealSlot:
+        calorie_target = nutrition_plan.daily_calories * MEAL_TARGET_SPLITS[meal_type]
+        serving_multiplier = max(0.85, min(1.8, calorie_target / float(recipe.calories)))
+        calories = int(round(recipe.calories * serving_multiplier))
+        protein_g = int(round(recipe.protein_g * serving_multiplier))
+        carbs_g = int(round(recipe.carbs_g * serving_multiplier))
+        fat_g = int(round(recipe.fat_g * serving_multiplier))
+
+        macro_fit_score = self._macro_fit_score(
+            calorie_target=calorie_target,
+            actual_calories=calories,
+            target_protein=nutrition_plan.protein_g * MEAL_TARGET_SPLITS[meal_type],
+            actual_protein=protein_g,
+        )
+
+        return MealSlot(
+            day=day,
+            meal_type=meal_type,
+            recipe_id=recipe.recipe_id,
+            recipe_name=recipe.name,
+            cuisine=recipe.cuisine,
+            prep_time_min=recipe.prep_time_min,
+            serving_multiplier=round(serving_multiplier, 2),
+            calories=calories,
+            protein_g=protein_g,
+            carbs_g=carbs_g,
+            fat_g=fat_g,
+            tags=recipe.tags,
+            macro_fit_score=macro_fit_score,
+            recipe=recipe,
+        )
+
+    def _macro_fit_score(
+        self,
+        calorie_target: float,
+        actual_calories: int,
+        target_protein: float,
+        actual_protein: int,
+    ) -> float:
+        calorie_delta = abs(actual_calories - calorie_target) / max(calorie_target, 1.0)
+        protein_delta = abs(actual_protein - target_protein) / max(target_protein, 1.0)
+        score = 1.0 - ((calorie_delta * 0.65) + (protein_delta * 0.35))
+        return round(max(0.0, min(1.0, score)), 3)
+
+    def _prep_cap(self, profile: UserProfileBase, meal_type: MealType, day: str) -> int:
+        defaults = {"breakfast": 15, "lunch": 20, "dinner": 35, "snack": 10}
+        if meal_type != "dinner":
+            return defaults[meal_type]
+
+        schedule = {str(key).lower(): str(value).lower() for key, value in profile.schedule_json.items()}
+        matching_entries = [
+            value
+            for key, value in schedule.items()
+            if day[:3] in key or day in key or "weeknight" in key or "weekday" in key
+        ]
+        if "saturday" in day or "sunday" in day:
+            matching_entries.extend(
+                value for key, value in schedule.items() if "weekend" in key or "saturday" in key or "sunday" in key
+            )
+
+        for entry in matching_entries:
+            digits = "".join(character for character in entry if character.isdigit())
+            if digits:
+                return max(15, int(digits))
+            if "quick" in entry:
+                return 25
+            if "flex" in entry or "slow" in entry:
+                return 45
+
+        return defaults[meal_type]

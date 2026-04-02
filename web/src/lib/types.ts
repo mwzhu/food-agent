@@ -7,8 +7,18 @@ export type ActivityLevel =
   | "extra_active";
 export type Goal = "cut" | "maintain" | "bulk";
 export type CookingSkill = "beginner" | "intermediate" | "advanced";
-export type MealType = "breakfast" | "lunch" | "dinner";
-export type RunStatus = "running" | "completed";
+export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+export type RunEventType =
+  | "phase_started"
+  | "phase_completed"
+  | "node_entered"
+  | "node_completed"
+  | "run_completed"
+  | "error";
+export type PhaseName = "memory" | "planning" | "shopping" | "checkout";
+export type PhaseStatus = "pending" | "running" | "completed" | "locked" | "failed";
+export type RunLifecycleStatus = "pending" | "running" | "completed" | "failed";
+export type RunStatus = Exclude<RunLifecycleStatus, "pending">;
 
 export interface UserProfileBase {
   age: number;
@@ -49,16 +59,58 @@ export interface NutritionPlan {
   notes: string;
 }
 
-export interface MealSlot {
-  day: string;
-  meal_type: MealType;
+export interface RecipeIngredient {
+  name: string;
+  quantity: number | null;
+  unit: string | null;
+  note: string;
+}
+
+export interface RecipeRecord {
   recipe_id: string;
-  recipe_name: string;
+  name: string;
+  cuisine: string;
+  meal_types: MealType[];
+  ingredients: RecipeIngredient[];
   prep_time_min: number;
   calories: number;
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  tags: string[];
+  instructions: string[];
+  source_url: string | null;
+}
+
+export interface PreferenceSummary {
+  preferred_cuisines: string[];
+  avoided_ingredients: string[];
+  preferred_meal_types: string[];
+  notes: string[];
+}
+
+export interface MealSlot {
+  day: string;
+  meal_type: MealType;
+  recipe_id: string;
+  recipe_name: string;
+  cuisine: string;
+  prep_time_min: number;
+  serving_multiplier: number;
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
+  tags: string[];
+  macro_fit_score: number;
+  recipe: RecipeRecord | null;
+}
+
+export interface CriticVerdict {
+  passed: boolean;
+  issues: string[];
+  warnings: string[];
+  repair_instructions: string[];
 }
 
 export interface ContextMetadata {
@@ -70,16 +122,94 @@ export interface ContextMetadata {
   retrieved_memory_ids: string[];
 }
 
+export interface MemorySnapshot {
+  memory_id: string;
+  user_id: string;
+  category: string;
+  content: string;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface PhaseStatuses {
+  memory: PhaseStatus;
+  planning: PhaseStatus;
+  shopping: PhaseStatus;
+  checkout: PhaseStatus;
+}
+
+export interface TraceMetadata {
+  kind: string | null;
+  project: string | null;
+  trace_id: string | null;
+  source: string | null;
+}
+
+interface BaseRunEvent {
+  event_id: string;
+  run_id: string;
+  message: string;
+  phase: PhaseName | null;
+  node_name: string | null;
+  created_at: string;
+  data: Record<string, unknown>;
+}
+
+export interface PhaseStartedEvent extends BaseRunEvent {
+  event_type: "phase_started";
+  phase: PhaseName;
+}
+
+export interface PhaseCompletedEvent extends BaseRunEvent {
+  event_type: "phase_completed";
+  phase: PhaseName;
+}
+
+export interface NodeEnteredEvent extends BaseRunEvent {
+  event_type: "node_entered";
+}
+
+export interface NodeCompletedEvent extends BaseRunEvent {
+  event_type: "node_completed";
+}
+
+export interface RunCompletedEvent extends BaseRunEvent {
+  event_type: "run_completed";
+  data: {
+    status: Extract<RunLifecycleStatus, "completed" | "failed">;
+  };
+}
+
+export interface RunErrorEvent extends BaseRunEvent {
+  event_type: "error";
+}
+
+export type RunEvent =
+  | PhaseStartedEvent
+  | PhaseCompletedEvent
+  | NodeEnteredEvent
+  | NodeCompletedEvent
+  | RunCompletedEvent
+  | RunErrorEvent;
+
 export interface PlannerStateSnapshot {
   run_id: string;
   user_id: string;
-  user_profile: Record<string, unknown>;
+  user_profile: UserProfileBase;
   nutrition_plan: NutritionPlan | null;
   selected_meals: MealSlot[];
+  user_preferences_learned: PreferenceSummary;
+  retrieved_memories: MemorySnapshot[];
+  critic_verdict: CriticVerdict | null;
+  repair_instructions: string[];
   context_metadata: ContextMetadata[];
-  status: "pending" | "completed";
-  current_node: "created" | "supervisor" | "planning_subgraph";
-  trace_metadata: Record<string, string | undefined>;
+  status: RunLifecycleStatus;
+  current_node: string;
+  current_phase: PhaseName | null;
+  phase_statuses: PhaseStatuses;
+  replan_count: number;
+  latest_error: string | null;
+  trace_metadata: TraceMetadata;
 }
 
 export interface RunCreateRequest {
@@ -90,7 +220,7 @@ export interface RunCreateRequest {
 export interface RunRead {
   run_id: string;
   user_id: string;
-  status: RunStatus;
+  status: RunLifecycleStatus;
   state_snapshot: PlannerStateSnapshot;
   created_at: string;
   updated_at: string;

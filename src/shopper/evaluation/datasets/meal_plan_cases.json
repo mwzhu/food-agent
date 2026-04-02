@@ -1,0 +1,56 @@
+[
+  {
+    "case_id": "weekday-quick",
+    "profile": {
+      "age": 31,
+      "weight_lbs": 172,
+      "height_in": 69,
+      "sex": "male",
+      "activity_level": "moderately_active",
+      "goal": "maintain",
+      "dietary_restrictions": [],
+      "allergies": [],
+      "budget_weekly": 150,
+      "household_size": 2,
+      "cooking_skill": "intermediate",
+      "schedule_json": {"weeknight_dinner": "30m", "weekend": "flexible"}
+    },
+    "expected": {"max_weeknight_dinner_min": 30}
+  },
+  {
+    "case_id": "vegetarian-quick",
+    "profile": {
+      "age": 28,
+      "weight_lbs": 140,
+      "height_in": 65,
+      "sex": "female",
+      "activity_level": "lightly_active",
+      "goal": "cut",
+      "dietary_restrictions": ["vegetarian"],
+      "allergies": [],
+      "budget_weekly": 110,
+      "household_size": 1,
+      "cooking_skill": "beginner",
+      "schedule_json": {"weekday_dinner": "25m"}
+    },
+    "expected": {"max_weeknight_dinner_min": 30}
+  },
+  {
+    "case_id": "vegan-flexible",
+    "profile": {
+      "age": 35,
+      "weight_lbs": 160,
+      "height_in": 68,
+      "sex": "other",
+      "activity_level": "lightly_active",
+      "goal": "maintain",
+      "dietary_restrictions": ["vegan"],
+      "allergies": [],
+      "budget_weekly": 125,
+      "household_size": 2,
+      "cooking_skill": "intermediate",
+      "schedule_json": {"weekdays": "quick", "weekend": "flexible"}
+    },
+    "expected": {"max_weeknight_dinner_min": 30}
+  }
+]

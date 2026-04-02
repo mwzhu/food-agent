@@ -16,22 +16,34 @@ from shopper.agents import build_planner_graph  # noqa: E402
 from shopper.config import get_settings  # noqa: E402
 from shopper.evaluation import EvaluationRunner  # noqa: E402
 from shopper.memory import ContextAssembler, MemoryStore  # noqa: E402
+from shopper.retrieval import QdrantRecipeStore  # noqa: E402
 
 
 async def main() -> int:
     parser = argparse.ArgumentParser(description="Run Shopper evaluation suites.")
-    parser.add_argument("--eval", required=True, choices=["nutrition"])
+    parser.add_argument(
+        "--eval",
+        required=True,
+        help="Single eval name or a comma-separated list: nutrition,meal_relevance,safety,groundedness",
+    )
     args = parser.parse_args()
 
     settings = get_settings()
     memory_store = MemoryStore()
     context_assembler = ContextAssembler(memory_store=memory_store)
-    graph = build_planner_graph(context_assembler=context_assembler)
-    runner = EvaluationRunner(graph=graph, settings=settings)
+    recipe_store = QdrantRecipeStore(ROOT / settings.recipe_corpus_path)
+    graph = build_planner_graph(
+        context_assembler=context_assembler,
+        memory_store=memory_store,
+        recipe_store=recipe_store,
+    )
+    runner = EvaluationRunner(graph=graph, settings=settings, recipe_store=recipe_store)
 
-    summary = await runner.run(args.eval)
-    print(json.dumps(summary, indent=2))
-    return 0 if summary["passed"] else 1
+    eval_names = [name.strip() for name in args.eval.split(",") if name.strip()]
+    summaries = [await runner.run(eval_name) for eval_name in eval_names]
+    payload = summaries[0] if len(summaries) == 1 else {"passed": all(item["passed"] for item in summaries), "summaries": summaries}
+    print(json.dumps(payload, indent=2))
+    return 0 if payload["passed"] else 1
 
 
 if __name__ == "__main__":

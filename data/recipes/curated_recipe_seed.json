@@ -1,0 +1,666 @@
+[
+  {
+    "recipe_id": "breakfast-overnight-oats",
+    "name": "Blueberry Protein Overnight Oats",
+    "cuisine": "american",
+    "meal_types": ["breakfast"],
+    "ingredients": [
+      {"name": "rolled oats", "quantity": 0.5, "unit": "cup"},
+      {"name": "greek yogurt", "quantity": 0.75, "unit": "cup"},
+      {"name": "chia seeds", "quantity": 1.0, "unit": "tbsp"},
+      {"name": "blueberries", "quantity": 0.5, "unit": "cup"}
+    ],
+    "prep_time_min": 10,
+    "calories": 420,
+    "protein_g": 29,
+    "carbs_g": 48,
+    "fat_g": 11,
+    "tags": ["vegetarian", "high-protein", "make-ahead"],
+    "instructions": [
+      "Combine oats, yogurt, chia seeds, and a splash of water in a jar.",
+      "Fold in blueberries and refrigerate overnight.",
+      "Serve chilled with extra berries if desired."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "breakfast-greek-yogurt-bowl",
+    "name": "Greek Yogurt Berry Crunch Bowl",
+    "cuisine": "mediterranean",
+    "meal_types": ["breakfast"],
+    "ingredients": [
+      {"name": "greek yogurt", "quantity": 1.0, "unit": "cup"},
+      {"name": "strawberries", "quantity": 0.5, "unit": "cup"},
+      {"name": "granola", "quantity": 0.25, "unit": "cup"},
+      {"name": "honey", "quantity": 1.0, "unit": "tsp"}
+    ],
+    "prep_time_min": 5,
+    "calories": 360,
+    "protein_g": 26,
+    "carbs_g": 32,
+    "fat_g": 10,
+    "tags": ["vegetarian", "no-cook", "high-protein", "gluten-free"],
+    "instructions": [
+      "Spoon yogurt into a bowl.",
+      "Top with strawberries, granola, and honey.",
+      "Serve immediately."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "breakfast-tofu-scramble-wrap",
+    "name": "Tofu Scramble Breakfast Wrap",
+    "cuisine": "mexican",
+    "meal_types": ["breakfast"],
+    "ingredients": [
+      {"name": "firm tofu", "quantity": 5.0, "unit": "oz"},
+      {"name": "whole wheat tortilla", "quantity": 1.0, "unit": "piece"},
+      {"name": "spinach", "quantity": 1.0, "unit": "cup"},
+      {"name": "salsa", "quantity": 2.0, "unit": "tbsp"}
+    ],
+    "prep_time_min": 14,
+    "calories": 410,
+    "protein_g": 24,
+    "carbs_g": 36,
+    "fat_g": 17,
+    "tags": ["vegan", "vegetarian", "dairy-free"],
+    "instructions": [
+      "Crumble tofu into a skillet and saute until lightly browned.",
+      "Add spinach and cook until wilted.",
+      "Wrap tofu scramble and salsa in the tortilla."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "breakfast-egg-spinach-toast",
+    "name": "Egg and Spinach Toast",
+    "cuisine": "american",
+    "meal_types": ["breakfast"],
+    "ingredients": [
+      {"name": "eggs", "quantity": 2.0, "unit": "pieces"},
+      {"name": "sourdough bread", "quantity": 2.0, "unit": "slices"},
+      {"name": "spinach", "quantity": 1.0, "unit": "cup"},
+      {"name": "olive oil", "quantity": 1.0, "unit": "tsp"}
+    ],
+    "prep_time_min": 12,
+    "calories": 390,
+    "protein_g": 22,
+    "carbs_g": 28,
+    "fat_g": 18,
+    "tags": ["high-protein"],
+    "instructions": [
+      "Toast the bread.",
+      "Saute spinach in olive oil and scramble eggs in the same pan.",
+      "Pile the eggs and spinach onto toast."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "breakfast-smoothie-bowl",
+    "name": "Mango Cottage Cheese Smoothie Bowl",
+    "cuisine": "tropical",
+    "meal_types": ["breakfast"],
+    "ingredients": [
+      {"name": "cottage cheese", "quantity": 0.75, "unit": "cup"},
+      {"name": "frozen mango", "quantity": 1.0, "unit": "cup"},
+      {"name": "banana", "quantity": 0.5, "unit": "piece"},
+      {"name": "pumpkin seeds", "quantity": 1.0, "unit": "tbsp"}
+    ],
+    "prep_time_min": 8,
+    "calories": 370,
+    "protein_g": 24,
+    "carbs_g": 35,
+    "fat_g": 10,
+    "tags": ["vegetarian", "high-protein", "no-cook", "gluten-free"],
+    "instructions": [
+      "Blend cottage cheese, mango, and banana until thick.",
+      "Pour into a bowl.",
+      "Top with pumpkin seeds before serving."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "lunch-chicken-quinoa-salad",
+    "name": "Lemon Chicken Quinoa Salad",
+    "cuisine": "mediterranean",
+    "meal_types": ["lunch"],
+    "ingredients": [
+      {"name": "chicken breast", "quantity": 5.0, "unit": "oz"},
+      {"name": "cooked quinoa", "quantity": 0.75, "unit": "cup"},
+      {"name": "cucumber", "quantity": 0.5, "unit": "cup"},
+      {"name": "tomatoes", "quantity": 0.5, "unit": "cup"}
+    ],
+    "prep_time_min": 18,
+    "calories": 520,
+    "protein_g": 41,
+    "carbs_g": 35,
+    "fat_g": 18,
+    "tags": ["high-protein", "gluten-free", "meal-prep"],
+    "instructions": [
+      "Slice cooked chicken and toss with quinoa and vegetables.",
+      "Dress with lemon juice and olive oil.",
+      "Serve chilled or at room temperature."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "lunch-lentil-chopped-salad",
+    "name": "Lentil Chopped Salad",
+    "cuisine": "mediterranean",
+    "meal_types": ["lunch"],
+    "ingredients": [
+      {"name": "cooked lentils", "quantity": 1.0, "unit": "cup"},
+      {"name": "romaine", "quantity": 2.0, "unit": "cups"},
+      {"name": "cucumber", "quantity": 0.5, "unit": "cup"},
+      {"name": "red onion", "quantity": 0.25, "unit": "cup"}
+    ],
+    "prep_time_min": 15,
+    "calories": 440,
+    "protein_g": 22,
+    "carbs_g": 48,
+    "fat_g": 14,
+    "tags": ["vegan", "vegetarian", "gluten-free", "fiber-rich"],
+    "instructions": [
+      "Combine lentils and chopped vegetables in a bowl.",
+      "Add olive oil, vinegar, salt, and pepper.",
+      "Toss well before serving."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "lunch-turkey-hummus-wrap",
+    "name": "Turkey Hummus Wrap",
+    "cuisine": "middle-eastern",
+    "meal_types": ["lunch"],
+    "ingredients": [
+      {"name": "turkey breast", "quantity": 4.0, "unit": "oz"},
+      {"name": "whole wheat tortilla", "quantity": 1.0, "unit": "piece"},
+      {"name": "hummus", "quantity": 3.0, "unit": "tbsp"},
+      {"name": "lettuce", "quantity": 1.0, "unit": "cup"}
+    ],
+    "prep_time_min": 10,
+    "calories": 490,
+    "protein_g": 34,
+    "carbs_g": 36,
+    "fat_g": 18,
+    "tags": ["high-protein", "quick"],
+    "instructions": [
+      "Spread hummus over the tortilla.",
+      "Layer turkey and lettuce on top.",
+      "Roll tightly and slice in half."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "lunch-soba-tofu-bowl",
+    "name": "Sesame Soba Tofu Bowl",
+    "cuisine": "japanese",
+    "meal_types": ["lunch"],
+    "ingredients": [
+      {"name": "soba noodles", "quantity": 2.5, "unit": "oz"},
+      {"name": "firm tofu", "quantity": 5.0, "unit": "oz"},
+      {"name": "edamame", "quantity": 0.5, "unit": "cup"},
+      {"name": "shredded carrots", "quantity": 0.5, "unit": "cup"}
+    ],
+    "prep_time_min": 20,
+    "calories": 500,
+    "protein_g": 26,
+    "carbs_g": 49,
+    "fat_g": 18,
+    "tags": ["vegan", "vegetarian", "dairy-free", "gluten-free"],
+    "instructions": [
+      "Cook soba noodles and cool slightly.",
+      "Pan-sear tofu cubes until crisp.",
+      "Assemble noodles, tofu, edamame, and carrots with a sesame soy dressing."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "lunch-black-bean-burrito-bowl",
+    "name": "Black Bean Burrito Bowl",
+    "cuisine": "mexican",
+    "meal_types": ["lunch"],
+    "ingredients": [
+      {"name": "black beans", "quantity": 0.75, "unit": "cup"},
+      {"name": "brown rice", "quantity": 0.75, "unit": "cup"},
+      {"name": "corn", "quantity": 0.25, "unit": "cup"},
+      {"name": "salsa", "quantity": 2.0, "unit": "tbsp"}
+    ],
+    "prep_time_min": 16,
+    "calories": 470,
+    "protein_g": 18,
+    "carbs_g": 68,
+    "fat_g": 11,
+    "tags": ["vegan", "vegetarian", "gluten-free", "meal-prep"],
+    "instructions": [
+      "Warm beans and rice.",
+      "Add corn and salsa to the bowl.",
+      "Finish with cilantro and lime if desired."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "dinner-herb-chicken-sheet-pan",
+    "name": "Herb Chicken Sheet Pan Dinner",
+    "cuisine": "mediterranean",
+    "meal_types": ["dinner"],
+    "ingredients": [
+      {"name": "chicken thighs", "quantity": 6.0, "unit": "oz"},
+      {"name": "baby potatoes", "quantity": 1.0, "unit": "cup"},
+      {"name": "broccoli", "quantity": 1.5, "unit": "cups"},
+      {"name": "olive oil", "quantity": 1.0, "unit": "tbsp"}
+    ],
+    "prep_time_min": 32,
+    "calories": 610,
+    "protein_g": 42,
+    "carbs_g": 35,
+    "fat_g": 30,
+    "tags": ["high-protein", "sheet-pan"],
+    "instructions": [
+      "Season chicken and vegetables with herbs and olive oil.",
+      "Roast on a sheet pan until the chicken is cooked through.",
+      "Serve hot straight from the tray."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "dinner-ginger-salmon-rice-bowl",
+    "name": "Ginger Salmon Rice Bowl",
+    "cuisine": "asian",
+    "meal_types": ["dinner"],
+    "ingredients": [
+      {"name": "salmon", "quantity": 5.0, "unit": "oz"},
+      {"name": "jasmine rice", "quantity": 0.75, "unit": "cup"},
+      {"name": "bok choy", "quantity": 1.5, "unit": "cups"},
+      {"name": "soy sauce", "quantity": 1.0, "unit": "tbsp"}
+    ],
+    "prep_time_min": 24,
+    "calories": 590,
+    "protein_g": 36,
+    "carbs_g": 42,
+    "fat_g": 28,
+    "tags": ["pescatarian", "gluten-free"],
+    "instructions": [
+      "Roast or pan-sear the salmon with ginger and soy sauce.",
+      "Steam the bok choy.",
+      "Serve salmon over rice with the greens."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "dinner-chickpea-tikka",
+    "name": "Chickpea Tikka Masala",
+    "cuisine": "indian",
+    "meal_types": ["dinner"],
+    "ingredients": [
+      {"name": "chickpeas", "quantity": 1.0, "unit": "cup"},
+      {"name": "light coconut milk", "quantity": 0.5, "unit": "cup"},
+      {"name": "tomato sauce", "quantity": 0.5, "unit": "cup"},
+      {"name": "basmati rice", "quantity": 0.75, "unit": "cup"}
+    ],
+    "prep_time_min": 28,
+    "calories": 560,
+    "protein_g": 20,
+    "carbs_g": 70,
+    "fat_g": 18,
+    "tags": ["vegan", "vegetarian", "dairy-free"],
+    "instructions": [
+      "Simmer chickpeas in tomato sauce, coconut milk, and tikka spices.",
+      "Cook rice separately.",
+      "Serve the curry over rice."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "dinner-turkey-meatball-orzo",
+    "name": "Turkey Meatball Orzo Skillet",
+    "cuisine": "italian",
+    "meal_types": ["dinner"],
+    "ingredients": [
+      {"name": "ground turkey", "quantity": 5.0, "unit": "oz"},
+      {"name": "orzo", "quantity": 2.5, "unit": "oz"},
+      {"name": "spinach", "quantity": 1.0, "unit": "cup"},
+      {"name": "crushed tomatoes", "quantity": 0.5, "unit": "cup"}
+    ],
+    "prep_time_min": 30,
+    "calories": 600,
+    "protein_g": 39,
+    "carbs_g": 47,
+    "fat_g": 22,
+    "tags": ["high-protein", "one-pan"],
+    "instructions": [
+      "Brown turkey meatballs in a skillet.",
+      "Add orzo, tomatoes, water, and simmer until tender.",
+      "Stir in spinach just before serving."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "dinner-miso-tofu-stir-fry",
+    "name": "Miso Tofu Stir Fry",
+    "cuisine": "japanese",
+    "meal_types": ["dinner"],
+    "ingredients": [
+      {"name": "firm tofu", "quantity": 6.0, "unit": "oz"},
+      {"name": "brown rice", "quantity": 0.75, "unit": "cup"},
+      {"name": "broccoli", "quantity": 1.0, "unit": "cup"},
+      {"name": "mushrooms", "quantity": 1.0, "unit": "cup"}
+    ],
+    "prep_time_min": 22,
+    "calories": 540,
+    "protein_g": 27,
+    "carbs_g": 46,
+    "fat_g": 20,
+    "tags": ["vegan", "vegetarian", "dairy-free"],
+    "instructions": [
+      "Pan-sear tofu until golden.",
+      "Stir-fry vegetables with a little miso and soy sauce.",
+      "Serve over brown rice."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "breakfast-cottage-cheese-toast",
+    "name": "Cottage Cheese Tomato Toast",
+    "cuisine": "mediterranean",
+    "meal_types": ["breakfast"],
+    "ingredients": [
+      {"name": "cottage cheese", "quantity": 0.5, "unit": "cup"},
+      {"name": "sourdough bread", "quantity": 2.0, "unit": "slices"},
+      {"name": "tomatoes", "quantity": 0.5, "unit": "cup"},
+      {"name": "black pepper", "quantity": 0.25, "unit": "tsp"}
+    ],
+    "prep_time_min": 8,
+    "calories": 340,
+    "protein_g": 23,
+    "carbs_g": 30,
+    "fat_g": 10,
+    "tags": ["vegetarian", "high-protein"],
+    "instructions": [
+      "Toast the bread slices.",
+      "Spread cottage cheese on top and finish with tomatoes and pepper.",
+      "Serve immediately."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "breakfast-green-smoothie",
+    "name": "Spinach Pineapple Protein Smoothie",
+    "cuisine": "american",
+    "meal_types": ["breakfast"],
+    "ingredients": [
+      {"name": "pea protein powder", "quantity": 1.0, "unit": "scoop"},
+      {"name": "spinach", "quantity": 1.0, "unit": "cup"},
+      {"name": "pineapple", "quantity": 0.75, "unit": "cup"},
+      {"name": "oat milk", "quantity": 1.0, "unit": "cup"}
+    ],
+    "prep_time_min": 6,
+    "calories": 300,
+    "protein_g": 27,
+    "carbs_g": 28,
+    "fat_g": 8,
+    "tags": ["vegan", "vegetarian", "dairy-free", "gluten-free"],
+    "instructions": [
+      "Blend all ingredients until smooth.",
+      "Adjust thickness with extra oat milk if needed.",
+      "Pour into a glass and serve cold."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "lunch-shrimp-quinoa-bowl",
+    "name": "Shrimp Quinoa Citrus Bowl",
+    "cuisine": "mediterranean",
+    "meal_types": ["lunch"],
+    "ingredients": [
+      {"name": "shrimp", "quantity": 5.0, "unit": "oz"},
+      {"name": "cooked quinoa", "quantity": 0.75, "unit": "cup"},
+      {"name": "arugula", "quantity": 1.0, "unit": "cup"},
+      {"name": "orange segments", "quantity": 0.5, "unit": "cup"}
+    ],
+    "prep_time_min": 18,
+    "calories": 480,
+    "protein_g": 34,
+    "carbs_g": 38,
+    "fat_g": 16,
+    "tags": ["pescatarian", "gluten-free", "high-protein"],
+    "instructions": [
+      "Cook the shrimp quickly in a skillet.",
+      "Arrange quinoa, arugula, and oranges in a bowl.",
+      "Top with shrimp and a lemon dressing."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "lunch-edamame-rice-salad",
+    "name": "Edamame Brown Rice Salad",
+    "cuisine": "japanese",
+    "meal_types": ["lunch"],
+    "ingredients": [
+      {"name": "edamame", "quantity": 0.75, "unit": "cup"},
+      {"name": "brown rice", "quantity": 0.75, "unit": "cup"},
+      {"name": "cabbage", "quantity": 1.0, "unit": "cup"},
+      {"name": "rice vinegar", "quantity": 1.0, "unit": "tbsp"}
+    ],
+    "prep_time_min": 16,
+    "calories": 430,
+    "protein_g": 19,
+    "carbs_g": 52,
+    "fat_g": 12,
+    "tags": ["vegan", "vegetarian", "dairy-free", "gluten-free"],
+    "instructions": [
+      "Warm the rice and edamame.",
+      "Toss with cabbage and rice vinegar.",
+      "Serve warm or chilled."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "dinner-cod-corn-skillet",
+    "name": "Cod and Corn Skillet",
+    "cuisine": "american",
+    "meal_types": ["dinner"],
+    "ingredients": [
+      {"name": "cod", "quantity": 6.0, "unit": "oz"},
+      {"name": "corn", "quantity": 0.75, "unit": "cup"},
+      {"name": "bell pepper", "quantity": 0.5, "unit": "cup"},
+      {"name": "olive oil", "quantity": 1.0, "unit": "tbsp"}
+    ],
+    "prep_time_min": 24,
+    "calories": 500,
+    "protein_g": 39,
+    "carbs_g": 29,
+    "fat_g": 21,
+    "tags": ["pescatarian", "gluten-free", "high-protein"],
+    "instructions": [
+      "Saute the vegetables in olive oil.",
+      "Add cod and cook until flaky.",
+      "Serve directly from the skillet."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "dinner-beef-fajita-rice",
+    "name": "Beef Fajita Rice Bowl",
+    "cuisine": "mexican",
+    "meal_types": ["dinner"],
+    "ingredients": [
+      {"name": "lean beef", "quantity": 5.0, "unit": "oz"},
+      {"name": "brown rice", "quantity": 0.75, "unit": "cup"},
+      {"name": "bell pepper", "quantity": 0.75, "unit": "cup"},
+      {"name": "onion", "quantity": 0.5, "unit": "cup"}
+    ],
+    "prep_time_min": 27,
+    "calories": 610,
+    "protein_g": 37,
+    "carbs_g": 46,
+    "fat_g": 24,
+    "tags": ["high-protein", "gluten-free"],
+    "instructions": [
+      "Sear the beef with fajita seasoning.",
+      "Cook peppers and onion until tender.",
+      "Serve over rice."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "dinner-white-bean-pasta",
+    "name": "White Bean Tomato Pasta",
+    "cuisine": "italian",
+    "meal_types": ["dinner"],
+    "ingredients": [
+      {"name": "white beans", "quantity": 0.75, "unit": "cup"},
+      {"name": "chickpea pasta", "quantity": 2.5, "unit": "oz"},
+      {"name": "crushed tomatoes", "quantity": 0.75, "unit": "cup"},
+      {"name": "spinach", "quantity": 1.0, "unit": "cup"}
+    ],
+    "prep_time_min": 21,
+    "calories": 530,
+    "protein_g": 24,
+    "carbs_g": 63,
+    "fat_g": 13,
+    "tags": ["vegan", "vegetarian", "dairy-free", "gluten-free"],
+    "instructions": [
+      "Cook the chickpea pasta.",
+      "Warm beans and tomatoes together, then fold in spinach.",
+      "Toss with pasta and serve."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "snack-apple-yogurt-cup",
+    "name": "Apple Cinnamon Yogurt Cup",
+    "cuisine": "american",
+    "meal_types": ["snack"],
+    "ingredients": [
+      {"name": "greek yogurt", "quantity": 0.75, "unit": "cup"},
+      {"name": "apple", "quantity": 0.5, "unit": "piece"},
+      {"name": "cinnamon", "quantity": 0.25, "unit": "tsp"}
+    ],
+    "prep_time_min": 4,
+    "calories": 180,
+    "protein_g": 17,
+    "carbs_g": 16,
+    "fat_g": 3,
+    "tags": ["vegetarian", "high-protein", "gluten-free"],
+    "instructions": [
+      "Spoon yogurt into a cup.",
+      "Top with chopped apple and cinnamon.",
+      "Serve chilled."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "snack-hummus-veggies",
+    "name": "Hummus and Crunchy Veggies",
+    "cuisine": "middle-eastern",
+    "meal_types": ["snack"],
+    "ingredients": [
+      {"name": "hummus", "quantity": 0.25, "unit": "cup"},
+      {"name": "cucumber", "quantity": 0.5, "unit": "cup"},
+      {"name": "carrots", "quantity": 0.5, "unit": "cup"}
+    ],
+    "prep_time_min": 5,
+    "calories": 190,
+    "protein_g": 7,
+    "carbs_g": 18,
+    "fat_g": 10,
+    "tags": ["vegan", "vegetarian", "dairy-free", "gluten-free"],
+    "instructions": [
+      "Portion hummus into a small bowl.",
+      "Slice the vegetables into sticks.",
+      "Serve together."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "snack-cottage-cheese-berries",
+    "name": "Cottage Cheese Berry Cup",
+    "cuisine": "american",
+    "meal_types": ["snack"],
+    "ingredients": [
+      {"name": "cottage cheese", "quantity": 0.5, "unit": "cup"},
+      {"name": "berries", "quantity": 0.5, "unit": "cup"}
+    ],
+    "prep_time_min": 3,
+    "calories": 170,
+    "protein_g": 16,
+    "carbs_g": 12,
+    "fat_g": 6,
+    "tags": ["vegetarian", "high-protein", "gluten-free"],
+    "instructions": [
+      "Add cottage cheese to a cup.",
+      "Top with berries.",
+      "Serve cold."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "snack-edamame-salt",
+    "name": "Steamed Edamame with Sea Salt",
+    "cuisine": "japanese",
+    "meal_types": ["snack"],
+    "ingredients": [
+      {"name": "edamame", "quantity": 1.0, "unit": "cup"},
+      {"name": "sea salt", "quantity": 0.25, "unit": "tsp"}
+    ],
+    "prep_time_min": 6,
+    "calories": 190,
+    "protein_g": 17,
+    "carbs_g": 14,
+    "fat_g": 8,
+    "tags": ["vegan", "vegetarian", "dairy-free", "gluten-free", "high-protein"],
+    "instructions": [
+      "Steam the edamame until hot.",
+      "Season lightly with sea salt.",
+      "Serve warm."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "snack-rice-cakes-turkey",
+    "name": "Turkey Avocado Rice Cakes",
+    "cuisine": "american",
+    "meal_types": ["snack"],
+    "ingredients": [
+      {"name": "rice cakes", "quantity": 2.0, "unit": "pieces"},
+      {"name": "turkey breast", "quantity": 2.0, "unit": "oz"},
+      {"name": "avocado", "quantity": 0.25, "unit": "piece"}
+    ],
+    "prep_time_min": 5,
+    "calories": 210,
+    "protein_g": 15,
+    "carbs_g": 17,
+    "fat_g": 9,
+    "tags": ["gluten-free", "high-protein"],
+    "instructions": [
+      "Spread avocado over the rice cakes.",
+      "Top with turkey slices.",
+      "Serve immediately."
+    ],
+    "source_url": null
+  },
+  {
+    "recipe_id": "snack-chia-pudding",
+    "name": "Vanilla Chia Pudding",
+    "cuisine": "american",
+    "meal_types": ["snack"],
+    "ingredients": [
+      {"name": "chia seeds", "quantity": 2.0, "unit": "tbsp"},
+      {"name": "oat milk", "quantity": 0.75, "unit": "cup"},
+      {"name": "vanilla extract", "quantity": 0.25, "unit": "tsp"}
+    ],
+    "prep_time_min": 5,
+    "calories": 180,
+    "protein_g": 6,
+    "carbs_g": 14,
+    "fat_g": 11,
+    "tags": ["vegan", "vegetarian", "dairy-free", "gluten-free", "make-ahead"],
+    "instructions": [
+      "Whisk chia seeds with oat milk and vanilla.",
+      "Refrigerate until thickened.",
+      "Serve chilled."
+    ],
+    "source_url": null
+  }
+]

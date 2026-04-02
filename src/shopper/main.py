@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from shopper.agents import build_planner_graph
+from shopper.agents.llm import build_chat_model
 from shopper.api import api_router
 from shopper.config import Settings, get_settings
 from shopper.db import create_engine, create_session_factory, init_db
+from shopper.retrieval import EmbeddingService, QdrantRecipeStore, RecipeReranker
 from shopper.memory import ContextAssembler, MemoryStore
+from shopper.services.run_manager import RunEventBus, RunManager
 
 
 def create_app(settings: Optional[Settings] = None) -> FastAPI:
@@ -22,14 +26,40 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
         session_factory = create_session_factory(engine)
         await init_db(engine)
 
-        memory_store = MemoryStore()
-        context_assembler = ContextAssembler(memory_store=memory_store)
+        memory_store = MemoryStore(session_factory=session_factory)
+        context_assembler = ContextAssembler(memory_store=memory_store, settings=settings)
+        embedding_service = EmbeddingService(settings=settings)
+        recipe_store = QdrantRecipeStore(
+            Path(settings.recipe_corpus_path),
+            embedding_service=embedding_service,
+            settings=settings,
+        )
+        reranker = RecipeReranker(settings=settings)
+        chat_model = build_chat_model(settings)
+        event_bus = RunEventBus()
         app.state.settings = settings
         app.state.engine = engine
         app.state.session_factory = session_factory
         app.state.memory_store = memory_store
         app.state.context_assembler = context_assembler
-        app.state.graph = build_planner_graph(context_assembler=context_assembler)
+        app.state.recipe_store = recipe_store
+        app.state.embedding_service = embedding_service
+        app.state.recipe_reranker = reranker
+        app.state.chat_model = chat_model
+        app.state.graph = build_planner_graph(
+            context_assembler=context_assembler,
+            memory_store=memory_store,
+            recipe_store=recipe_store,
+            reranker=reranker,
+            chat_model=chat_model,
+        )
+        app.state.run_manager = RunManager(
+            session_factory=session_factory,
+            graph=app.state.graph,
+            settings=settings,
+            event_bus=event_bus,
+        )
+        app.state.event_bus = event_bus
         yield
         await engine.dispose()
 

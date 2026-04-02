@@ -23,11 +23,14 @@ export function RunCard({ run }: RunCardProps) {
                 {run.state_snapshot.nutrition_plan?.daily_calories ?? 0} calorie plan
               </h3>
             </div>
-            <Badge variant={run.status === "completed" ? "success" : "default"}>{run.status}</Badge>
+            <Badge variant={run.status === "completed" ? "success" : run.status === "failed" ? "outline" : "default"}>
+              {run.status}
+            </Badge>
           </div>
 
           <div className="flex flex-wrap justify-between gap-3 text-sm text-muted-foreground">
             <span>{run.state_snapshot.selected_meals.length} meals</span>
+            <span>{run.state_snapshot.current_phase ? `Phase: ${run.state_snapshot.current_phase}` : "Queued"}</span>
             <span>{formatDateTime(run.created_at)}</span>
           </div>
         </CardContent>

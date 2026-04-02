@@ -8,50 +8,49 @@ from uuid import uuid4
 
 from shopper.agents import invoke_planner_graph
 from shopper.config import Settings
+from shopper.evaluation.evaluators.groundedness import GroundednessEvaluator
+from shopper.evaluation.evaluators.meal_relevance import MealRelevanceEvaluator
 from shopper.evaluation.evaluators.nutrition_accuracy import NutritionAccuracyEvaluator
-from shopper.schemas import PlannerStateSnapshot, NutritionPlan
+from shopper.evaluation.evaluators.safety import SafetyEvaluator
+from shopper.schemas import MealSlot, NutritionPlan, PlannerStateSnapshot
 
 
-DATASET_PATH = Path(__file__).resolve().parent / "datasets" / "nutrition_cases.json"
+DATASET_DIR = Path(__file__).resolve().parent / "datasets"
 
 
 class EvaluationRunner:
-    def __init__(self, graph, settings: Settings) -> None:
+    def __init__(self, graph, settings: Settings, recipe_store) -> None:
         self.graph = graph
         self.settings = settings
+        self.recipe_store = recipe_store
         self.nutrition_evaluator = NutritionAccuracyEvaluator()
+        self.meal_relevance_evaluator = MealRelevanceEvaluator()
+        self.safety_evaluator = SafetyEvaluator()
+        self.groundedness_evaluator = GroundednessEvaluator()
 
     async def run(self, eval_name: str) -> Dict[str, Any]:
-        assert eval_name == "nutrition"
-        cases = self._load_cases()
+        dataset_name = {
+            "nutrition": "nutrition_cases.json",
+            "meal_relevance": "meal_plan_cases.json",
+            "safety": "safety_cases.json",
+            "groundedness": "meal_plan_cases.json",
+        }[eval_name]
+        cases = self._load_cases(dataset_name)
         results = []
         for case in cases:
-            initial_state = PlannerStateSnapshot(
-                run_id="eval-{case_id}".format(case_id=case["case_id"]),
-                user_id=case["case_id"],
-                user_profile=case["profile"],
-                nutrition_plan=None,
-                selected_meals=[],
-                context_metadata=[],
-                status="pending",
-                current_node="created",
-                trace_metadata={},
-            ).model_dump(mode="json")
-
+            initial_state = self._build_initial_state(case)
             graph_result = await invoke_planner_graph(self.graph, initial_state, self.settings, source="eval")
-            assert "nutrition_plan" in graph_result
-            plan = NutritionPlan.model_validate(graph_result["nutrition_plan"])
-            evaluation = self.nutrition_evaluator.evaluate(case, plan)
+            evaluation = self._evaluate_case(eval_name, case, graph_result)
             results.append(
                 {
                     "case_id": case["case_id"],
                     "passed": evaluation["passed"],
                     "issues": evaluation["issues"],
-                    "tdee_delta_pct": evaluation["tdee_delta_pct"],
-                    "macro_delta_pct": evaluation["macro_delta_pct"],
                     "trace_metadata": graph_result.get("trace_metadata", {}),
-                    "nutrition_plan": plan.model_dump(mode="json"),
+                    "nutrition_plan": graph_result.get("nutrition_plan"),
+                    "selected_meals": graph_result.get("selected_meals", []),
                     "profile": case["profile"],
+                    **{key: value for key, value in evaluation.items() if key not in {"passed", "issues"}},
                 }
             )
 
@@ -66,10 +65,31 @@ class EvaluationRunner:
             "results": results,
         }
 
-    def _load_cases(self) -> List[Dict[str, Any]]:
-        cases = json.loads(DATASET_PATH.read_text(encoding="utf-8"))
+    def _load_cases(self, dataset_name: str) -> List[Dict[str, Any]]:
+        cases = json.loads((DATASET_DIR / dataset_name).read_text(encoding="utf-8"))
         assert isinstance(cases, list)
         return cases
+
+    def _build_initial_state(self, case: Dict[str, Any]) -> Dict[str, Any]:
+        return PlannerStateSnapshot.starting(
+            run_id="eval-{case_id}".format(case_id=case["case_id"]),
+            user_id=case["case_id"],
+            user_profile=case["profile"],
+        ).model_dump(mode="json")
+
+    def _evaluate_case(self, eval_name: str, case: Dict[str, Any], graph_result: Dict[str, Any]) -> Dict[str, Any]:
+        plan = NutritionPlan.model_validate(graph_result["nutrition_plan"])
+        meals = [MealSlot.model_validate(item) for item in graph_result.get("selected_meals", [])]
+
+        if eval_name == "nutrition":
+            return self.nutrition_evaluator.evaluate(case, plan)
+        if eval_name == "meal_relevance":
+            return self.meal_relevance_evaluator.evaluate(case, meals, self.recipe_store.get_recipe)
+        if eval_name == "safety":
+            return self.safety_evaluator.evaluate(case, meals)
+        if eval_name == "groundedness":
+            return self.groundedness_evaluator.evaluate(case, meals, self.recipe_store.get_recipe)
+        raise AssertionError(eval_name)
 
     def _maybe_upload_results(self, eval_name: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:
         if not self.settings.langsmith_tracing:

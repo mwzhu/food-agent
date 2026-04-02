@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import time
 
 from fastapi.testclient import TestClient
 
@@ -16,6 +17,18 @@ def _make_client(tmp_path: Path) -> TestClient:
     )
     app = create_app(settings)
     return TestClient(app)
+
+
+def _wait_for_run_completion(client: TestClient, run_id: str, timeout_seconds: float = 5.0) -> dict:
+    deadline = time.time() + timeout_seconds
+    while time.time() < deadline:
+        response = client.get(f"/v1/runs/{run_id}")
+        assert response.status_code == 200, response.text
+        payload = response.json()
+        if payload["status"] != "running":
+            return payload
+        time.sleep(0.05)
+    raise AssertionError(f"Run {run_id} did not complete within {timeout_seconds} seconds.")
 
 
 def test_post_run_completes_and_persists_state(tmp_path):
@@ -42,17 +55,27 @@ def test_post_run_completes_and_persists_state(tmp_path):
         response = client.post("/v1/runs", json=payload)
         assert response.status_code == 201, response.text
         body = response.json()
-        assert body["status"] == "completed"
-        assert body["state_snapshot"]["nutrition_plan"]["tdee"] > 0
-        assert len(body["state_snapshot"]["selected_meals"]) == 21
-        assert len(body["state_snapshot"]["context_metadata"]) == 2
-        assert body["state_snapshot"]["trace_metadata"]["trace_id"]
-        assert body["state_snapshot"]["trace_metadata"]["source"] == "api"
+        assert body["status"] == "running"
+        assert body["state_snapshot"]["current_phase"] == "memory"
 
         run_id = body["run_id"]
-        fetch_response = client.get("/v1/runs/{run_id}".format(run_id=run_id))
-        assert fetch_response.status_code == 200, fetch_response.text
-        assert fetch_response.json()["run_id"] == run_id
+        completed_run = _wait_for_run_completion(client, run_id)
+        assert completed_run["run_id"] == run_id
+        assert completed_run["status"] == "completed"
+        assert completed_run["state_snapshot"]["nutrition_plan"]["tdee"] > 0
+        assert len(completed_run["state_snapshot"]["selected_meals"]) == 28
+        assert {"breakfast", "lunch", "dinner", "snack"} == {
+            meal["meal_type"] for meal in completed_run["state_snapshot"]["selected_meals"]
+        }
+        metadata_nodes = {
+            entry["node_name"]
+            for entry in completed_run["state_snapshot"]["context_metadata"]
+        }
+        assert {"load_memory", "nutrition_planner", "meal_selector", "critic"} <= metadata_nodes
+        assert completed_run["state_snapshot"]["critic_verdict"]["passed"] is True
+        assert completed_run["state_snapshot"]["phase_statuses"]["planning"] == "completed"
+        assert completed_run["state_snapshot"]["trace_metadata"]["trace_id"]
+        assert completed_run["state_snapshot"]["trace_metadata"]["source"] == "api"
 
 
 def test_user_crud_flow(tmp_path):
@@ -116,6 +139,8 @@ def test_list_runs_and_trace_endpoint(tmp_path):
         assert first.status_code == 201, first.text
         second = client.post("/v1/runs", json=payload)
         assert second.status_code == 201, second.text
+        _wait_for_run_completion(client, first.json()["run_id"])
+        _wait_for_run_completion(client, second.json()["run_id"])
 
         list_response = client.get("/v1/runs", params={"user_id": "sam", "limit": 1})
         assert list_response.status_code == 200, list_response.text
@@ -129,3 +154,41 @@ def test_list_runs_and_trace_endpoint(tmp_path):
         assert trace_body["run_id"] == listed_runs[0]["run_id"]
         assert trace_body["trace_id"]
         assert trace_body["source"] == "api"
+
+
+def test_run_stream_endpoint_replays_events(tmp_path):
+    client = _make_client(tmp_path)
+    payload = {
+        "user_id": "streamer",
+        "profile": {
+            "age": 29,
+            "weight_lbs": 150,
+            "height_in": 64,
+            "sex": "female",
+            "activity_level": "lightly_active",
+            "goal": "maintain",
+            "dietary_restrictions": ["vegetarian"],
+            "allergies": [],
+            "budget_weekly": 120,
+            "household_size": 1,
+            "cooking_skill": "intermediate",
+            "schedule_json": {"weeknight_dinner": "25m"},
+        },
+    }
+
+    with client:
+        run_response = client.post("/v1/runs", json=payload)
+        assert run_response.status_code == 201, run_response.text
+        run_id = run_response.json()["run_id"]
+
+        events = []
+        with client.stream("GET", f"/v1/runs/{run_id}/stream") as response:
+            assert response.status_code == 200, response.text
+            for line in response.iter_lines():
+                if not line or not line.startswith("data: "):
+                    continue
+                events.append(line.removeprefix("data: "))
+                if len(events) >= 3:
+                    break
+
+        assert events, "Expected stream endpoint to emit at least one event."

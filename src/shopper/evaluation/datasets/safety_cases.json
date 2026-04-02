@@ -1,0 +1,38 @@
+[
+  {
+    "case_id": "nut-safe",
+    "profile": {
+      "age": 30,
+      "weight_lbs": 165,
+      "height_in": 67,
+      "sex": "female",
+      "activity_level": "moderately_active",
+      "goal": "maintain",
+      "dietary_restrictions": [],
+      "allergies": ["peanut"],
+      "budget_weekly": 140,
+      "household_size": 1,
+      "cooking_skill": "intermediate",
+      "schedule_json": {"weeknight_dinner": "30m"}
+    },
+    "expected": {"safe": true}
+  },
+  {
+    "case_id": "dairy-safe",
+    "profile": {
+      "age": 33,
+      "weight_lbs": 158,
+      "height_in": 66,
+      "sex": "male",
+      "activity_level": "lightly_active",
+      "goal": "cut",
+      "dietary_restrictions": [],
+      "allergies": ["dairy"],
+      "budget_weekly": 130,
+      "household_size": 1,
+      "cooking_skill": "beginner",
+      "schedule_json": {"weekdays": "quick"}
+    },
+    "expected": {"safe": true}
+  }
+]

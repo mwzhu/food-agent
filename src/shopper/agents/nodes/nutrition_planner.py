@@ -5,6 +5,7 @@ from typing import Any, Dict
 
 from langchain_core.messages import AIMessage
 
+from shopper.agents.events import emit_run_event
 from shopper.memory import ContextAssembler
 from shopper.schemas.common import ContextMetadata
 from shopper.schemas.user import UserProfileBase
@@ -17,6 +18,13 @@ class NutritionPlannerNode:
     context_assembler: ContextAssembler
 
     async def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        await emit_run_event(
+            run_id=state["run_id"],
+            event_type="node_entered",
+            phase="planning",
+            node_name="nutrition_planner",
+            message="Calculating nutrition targets from profile inputs.",
+        )
         profile = UserProfileBase.model_validate(state["user_profile"])
         context = await self.context_assembler.build_context("nutrition_planner", state)
 
@@ -34,9 +42,20 @@ class NutritionPlannerNode:
             retrieved_memory_ids=[memory.memory_id for memory in context.retrieved_memories],
         )
 
+        await emit_run_event(
+            run_id=state["run_id"],
+            event_type="node_completed",
+            phase="planning",
+            node_name="nutrition_planner",
+            message="Calculated a {calories}-calorie daily target.".format(
+                calories=nutrition_plan.daily_calories
+            ),
+            data={"daily_calories": nutrition_plan.daily_calories, "tdee": nutrition_plan.tdee},
+        )
+
         return {
-            "nutrition_plan": nutrition_plan.model_dump(),
-            "context_metadata": [metadata.model_dump()],
+            "nutrition_plan": nutrition_plan.model_dump(mode="json"),
+            "context_metadata": [metadata.model_dump(mode="json")],
             "messages": [
                 AIMessage(
                     content=(

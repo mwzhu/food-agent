@@ -13,7 +13,7 @@ const DAY_ORDER = [
   "sunday",
 ];
 
-const MEAL_ORDER = ["breakfast", "lunch", "dinner"];
+const MEAL_ORDER = ["breakfast", "lunch", "dinner", "snack"];
 
 export function cn(...inputs: ClassValue[]): string {
   return twMerge(clsx(inputs));
@@ -41,6 +41,20 @@ export function formatDateTime(value: string): string {
     hour: "numeric",
     minute: "2-digit",
   }).format(new Date(value));
+}
+
+export function formatDuration(milliseconds: number): string {
+  const totalSeconds = Math.max(0, Math.round(milliseconds / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (!minutes) {
+    return `${seconds}s`;
+  }
+  return `${minutes}m ${seconds}s`;
+}
+
+export function formatPercent(value: number): string {
+  return `${Math.round(value * 100)}%`;
 }
 
 export function splitListInput(value: string): string[] {
@@ -85,4 +99,30 @@ export function scheduleValue(
   key: string,
 ): string {
   return schedule[key] ?? "";
+}
+
+export function macroFitTone(score: number): {
+  badgeLabel: string;
+  accentClass: string;
+  surfaceClass: string;
+} {
+  if (score >= 0.82) {
+    return {
+      badgeLabel: "On target",
+      accentClass: "text-success",
+      surfaceClass: "border-success/30 bg-success-soft/60",
+    };
+  }
+  if (score >= 0.65) {
+    return {
+      badgeLabel: "Close",
+      accentClass: "text-[color:var(--chart-2)]",
+      surfaceClass: "border-[color:rgba(212,131,70,0.35)] bg-[rgba(212,131,70,0.10)]",
+    };
+  }
+  return {
+    badgeLabel: "Needs tuning",
+    accentClass: "text-accent-foreground",
+    surfaceClass: "border-primary/25 bg-accent/55",
+  };
 }

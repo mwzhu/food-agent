@@ -8,3 +8,4 @@ shopper.db
 web/.next/
 web/node_modules/
 npm-debug.log*
+data/recipes/full_dataset.csv
