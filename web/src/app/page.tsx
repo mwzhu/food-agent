@@ -60,14 +60,14 @@ export default function DashboardPage() {
           <CardContent className="grid gap-8 p-8 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-5">
               <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">
-                Phase 2 experience
+                Phase 3 experience
               </p>
               <h1 className="max-w-[12ch] font-display text-4xl leading-none md:text-6xl">
                 Start by creating the profile your planner will cook for.
               </h1>
               <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-                This frontend now lets you onboard, stream a live planning run, and inspect
-                the retrieved recipes, nutrition fit, and critic verdict in each run.
+                This frontend now lets you onboard, stream a live planning run, inspect the
+                retrieved recipes, and carry your saved fridge inventory into the grocery phase.
               </p>
               <Button asChild size="lg">
                 <Link href="/onboarding">Create a profile</Link>
@@ -78,14 +78,14 @@ export default function DashboardPage() {
               <div>
                 <p className="text-sm font-semibold">What you unlock</p>
                 <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  The stack now supports SSE progress streaming, richer meal cards, and
-                  nutrition charts, so later shopping phases can build on the same system.
+                  The stack now supports SSE progress streaming, richer meal cards, grocery
+                  lists, and fridge inventory tracking on the same run detail surface.
                 </p>
               </div>
               <div className="space-y-3">
                 <Badge>Profile persistence</Badge>
                 <Badge variant="secondary">Run history</Badge>
-                <Badge variant="outline">Nutrition charts</Badge>
+                <Badge variant="outline">Fridge inventory</Badge>
               </div>
             </div>
           </CardContent>
@@ -138,8 +138,8 @@ export default function DashboardPage() {
           </p>
           <CardTitle className="text-4xl md:text-5xl">Planner cockpit for {user.user_id}</CardTitle>
           <CardDescription className="max-w-3xl text-base">
-            Phase 2 adds retrieval-backed meal selection, live run progress, and critic
-            verification so you can inspect more of the planner's actual behavior.
+            Phase 3 adds fridge-aware grocery generation on top of the live planning and critic
+            workflow, so each completed run now ends with a usable shopping list.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -231,7 +231,7 @@ export default function DashboardPage() {
             <ul className="space-y-3 text-sm leading-6 text-muted-foreground">
               <li>Create and persist a user profile.</li>
               <li>Launch a streamed nutrition-planning run from saved preferences.</li>
-              <li>Review calories, macros, meal selections, critic verdicts, and trace metadata.</li>
+              <li>Review calories, macros, meal selections, grocery lists, critic verdicts, and trace metadata.</li>
             </ul>
           </CardContent>
         </Card>

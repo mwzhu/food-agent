@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard" },
   { href: "/profile", label: "Profile" },
+  { href: "/inventory", label: "Inventory" },
   { href: "/runs", label: "Run history" },
   { href: "/onboarding", label: "New profile" },
 ];
@@ -30,10 +31,10 @@ export function Nav() {
         </Link>
         <div>
           <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">
-            Phase 2 planner
+            Phase 3 planner
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Retrieval-backed meal planning with traceable runs.
+            Meal planning plus fridge-aware grocery generation.
           </p>
         </div>
       </div>

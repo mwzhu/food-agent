@@ -108,7 +108,7 @@ def test_invoke_planner_graph_uses_langsmith_trace_context(monkeypatch) -> None:
         "run_name": "api:planner_graph",
         "tags": ["shopper", "api"],
         "metadata": {
-            "phase": "phase2",
+            "phase": "phase3",
             "source": "api",
             "shopper_run_id": "run-123",
             "user_id": "user-456",
@@ -122,7 +122,7 @@ def test_invoke_planner_graph_uses_langsmith_trace_context(monkeypatch) -> None:
     assert captured["trace_context"]["tags"] == ["shopper", "api"]
     assert isinstance(captured["trace_context"]["client"], FakeClient)
     assert captured["trace_context"]["metadata"] == {
-        "phase": "phase2",
+        "phase": "phase3",
         "source": "api",
         "shopper_run_id": "run-123",
         "user_id": "user-456",
@@ -141,6 +141,7 @@ def test_invoke_planner_graph_uses_langsmith_trace_context(monkeypatch) -> None:
         "current_phase": "planning",
         "current_node": "critic",
         "selected_meal_count": 1,
+        "grocery_item_count": 0,
         "critic_passed": True,
     }
 

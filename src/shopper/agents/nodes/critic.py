@@ -12,8 +12,8 @@ from shopper.agents.events import emit_run_event
 from shopper.agents.llm import invoke_structured
 from shopper.memory import ContextAssembler
 from shopper.retrieval import QdrantRecipeStore
-from shopper.schemas import ContextMetadata, CriticVerdict, MealSlot, NutritionPlan
-from shopper.validators import validate_meal_plan_safety, validate_nutrition_plan
+from shopper.schemas import ContextMetadata, CriticVerdict, GroceryItem, MealSlot, NutritionPlan
+from shopper.validators import validate_grocery_list, validate_meal_plan_safety, validate_nutrition_plan
 
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "critic.md"
@@ -33,24 +33,37 @@ class CriticNode:
     chat_model: Optional[Any] = None
 
     async def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
+        phase = state.get("current_phase", "planning")
         await emit_run_event(
             run_id=state["run_id"],
             event_type="node_entered",
-            phase="planning",
+            phase=phase,
             node_name="critic",
-            message="Reviewing nutrition, safety, and recipe groundedness.",
+            message=(
+                "Reviewing nutrition, safety, and recipe groundedness."
+                if phase == "planning"
+                else "Reviewing grocery completeness against the approved meal plan."
+            ),
         )
 
         context = await self.context_assembler.build_context("critic", state)
         nutrition_plan = NutritionPlan.model_validate(state["nutrition_plan"])
         meals = [MealSlot.model_validate(item) for item in state["selected_meals"]]
+        grocery_list = [GroceryItem.model_validate(item) for item in state.get("grocery_list", [])]
         nutrition_plan_issues = validate_nutrition_plan(nutrition_plan)
         user_profile = state["user_profile"]
         safety_issues = validate_meal_plan_safety(meals, user_profile["allergies"])
         groundedness_issues = self._groundedness_issues(meals)
+        grocery_issues = validate_grocery_list(meals, grocery_list) if phase == "shopping" else []
         llm_assessment = await self._llm_review(context.payload, nutrition_plan, meals)
         warnings = self._dedupe(self._variety_warnings(meals) + (llm_assessment.warnings if llm_assessment else []))
-        issues = self._dedupe(nutrition_plan_issues + safety_issues + groundedness_issues + (llm_assessment.issues if llm_assessment else []))
+        issues = self._dedupe(
+            nutrition_plan_issues
+            + safety_issues
+            + groundedness_issues
+            + grocery_issues
+            + (llm_assessment.issues if llm_assessment else [])
+        )
         verdict = CriticVerdict(
             passed=not issues and (llm_assessment.passed if llm_assessment is not None else True),
             issues=issues,
@@ -72,9 +85,10 @@ class CriticNode:
         await emit_run_event(
             run_id=state["run_id"],
             event_type="node_completed",
-            phase="planning",
+            phase=phase,
             node_name="critic",
-            message="Critic {result} with {issue_count} blocking issues.".format(
+            message="{phase} critic {result} with {issue_count} blocking issues.".format(
+                phase=str(phase).title(),
                 result="passed" if verdict.passed else "failed",
                 issue_count=len(verdict.issues),
             ),

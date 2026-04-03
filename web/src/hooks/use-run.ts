@@ -13,11 +13,10 @@ export function useRuns(userId: string | null, limit = 10) {
   });
 }
 
-export function useRun(runId: string | null, pollWhileRunning = false) {
+export function useRun(runId: string, pollWhileRunning = false) {
   return useQuery({
     queryKey: ["run", runId],
-    queryFn: () => getRun(runId as string),
-    enabled: Boolean(runId),
+    queryFn: () => getRun(runId),
     refetchInterval: (query) => {
       if (!pollWhileRunning) {
         return false;
@@ -39,10 +38,9 @@ export function useCreateRun() {
   });
 }
 
-export function useRunTrace(runId: string | null) {
+export function useRunTrace(runId: string) {
   return useQuery({
     queryKey: ["run-trace", runId],
-    queryFn: () => getRunTrace(runId as string),
-    enabled: Boolean(runId),
+    queryFn: () => getRunTrace(runId),
   });
 }

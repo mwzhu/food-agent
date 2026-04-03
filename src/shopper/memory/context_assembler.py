@@ -6,7 +6,7 @@ from typing import Any, Dict, Literal, Mapping, Optional
 from shopper.config import Settings, get_settings
 from shopper.memory.store import MemoryStore
 from shopper.memory.types import AssembledContext, ContextBudget, EpisodicMemory
-from shopper.schemas import CriticVerdict, MealSlot, NutritionPlan, PreferenceSummary
+from shopper.schemas import CriticVerdict, GroceryItem, MealSlot, NutritionPlan, PreferenceSummary
 
 
 NodeName = Literal["load_memory", "nutrition_planner", "meal_selector", "critic"]
@@ -75,6 +75,19 @@ class ContextAssembler:
                 "allergies": profile["allergies"],
                 "dietary_restrictions": profile["dietary_restrictions"],
             }
+            if state.get("current_phase") == "shopping" and state.get("grocery_list"):
+                grocery_list = [GroceryItem.model_validate(item) for item in state["grocery_list"]]
+                payload["grocery_list"] = [
+                    {
+                        "name": item.name,
+                        "quantity": item.quantity,
+                        "shopping_quantity": item.shopping_quantity,
+                        "unit": item.unit,
+                        "category": item.category,
+                        "already_have": item.already_have,
+                    }
+                    for item in grocery_list
+                ]
             token_budget = 1800
         else:
             assert False, node_name

@@ -16,12 +16,26 @@ from shopper.schemas.common import (
     RunLifecycleStatus,
     TraceMetadata,
 )
+from shopper.schemas.grocery import GroceryItem
+from shopper.schemas.inventory import (
+    FridgeItemCreate,
+    FridgeItemRead,
+    FridgeItemSnapshot,
+    FridgeItemUpdate,
+    InventoryCategory,
+)
 from shopper.schemas.run import RunCreateRequest, RunRead, RunTraceRead
 from shopper.schemas.user import UserProfileBase, UserProfileCreate, UserProfileRead, UserProfileUpdate
 
 __all__ = [
     "ContextMetadata",
     "CriticVerdict",
+    "FridgeItemCreate",
+    "FridgeItemRead",
+    "FridgeItemSnapshot",
+    "FridgeItemUpdate",
+    "GroceryItem",
+    "InventoryCategory",
     "MealSlot",
     "MealType",
     "NutritionPlan",

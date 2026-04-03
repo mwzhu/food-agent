@@ -13,6 +13,7 @@ def _make_client(tmp_path: Path) -> TestClient:
     settings = Settings(
         SHOPPER_DATABASE_URL="sqlite+aiosqlite:///{path}".format(path=tmp_path / "test.db"),
         SHOPPER_APP_ENV="test",
+        SHOPPER_QDRANT_URL=None,
         LANGSMITH_TRACING=False,
     )
     app = create_app(settings)
@@ -71,9 +72,11 @@ def test_post_run_completes_and_persists_state(tmp_path):
             entry["node_name"]
             for entry in completed_run["state_snapshot"]["context_metadata"]
         }
-        assert {"load_memory", "nutrition_planner", "meal_selector", "critic"} <= metadata_nodes
+        assert {"load_memory", "nutrition_planner", "meal_selector", "critic", "grocery_builder", "price_optimizer"} <= metadata_nodes
         assert completed_run["state_snapshot"]["critic_verdict"]["passed"] is True
         assert completed_run["state_snapshot"]["phase_statuses"]["planning"] == "completed"
+        assert completed_run["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
+        assert completed_run["state_snapshot"]["grocery_list"]
         assert completed_run["state_snapshot"]["trace_metadata"]["trace_id"]
         assert completed_run["state_snapshot"]["trace_metadata"]["source"] == "api"
 
@@ -104,6 +107,145 @@ def test_user_crud_flow(tmp_path):
         get_response = client.get("/v1/users/casey")
         assert get_response.status_code == 200, get_response.text
         assert get_response.json()["budget_weekly"] == 125
+
+
+def test_inventory_crud_flow(tmp_path):
+    client = _make_client(tmp_path)
+    user_payload = {
+        "user_id": "inventory-user",
+        "age": 30,
+        "weight_lbs": 160,
+        "height_in": 68,
+        "sex": "female",
+        "activity_level": "lightly_active",
+        "goal": "maintain",
+        "dietary_restrictions": [],
+        "allergies": [],
+        "budget_weekly": 120,
+        "household_size": 1,
+        "cooking_skill": "intermediate",
+        "schedule_json": {"weeknight_dinner": "30m"},
+    }
+
+    with client:
+        create_user = client.post("/v1/users", json=user_payload)
+        assert create_user.status_code == 201, create_user.text
+
+        create_item = client.post(
+            "/v1/users/inventory-user/inventory",
+            json={
+                "name": "spinach",
+                "quantity": 2,
+                "unit": "cup",
+                "category": "produce",
+                "expiry_date": "2026-04-04",
+            },
+        )
+        assert create_item.status_code == 201, create_item.text
+        item_id = create_item.json()["item_id"]
+
+        list_items = client.get("/v1/users/inventory-user/inventory")
+        assert list_items.status_code == 200, list_items.text
+        assert len(list_items.json()) == 1
+
+        update_item = client.put(
+            f"/v1/users/inventory-user/inventory/{item_id}",
+            json={"quantity": 3, "expiry_date": "2026-04-05"},
+        )
+        assert update_item.status_code == 200, update_item.text
+        assert update_item.json()["quantity"] == 3
+
+        delete_item = client.delete(f"/v1/users/inventory-user/inventory/{item_id}")
+        assert delete_item.status_code == 204, delete_item.text
+        assert client.get("/v1/users/inventory-user/inventory").json() == []
+
+
+def test_full_run_builds_grocery_list_and_applies_full_and_partial_fridge_diff(tmp_path):
+    client = _make_client(tmp_path)
+    payload = {
+        "user_id": "fridge-check",
+        "profile": {
+            "age": 29,
+            "weight_lbs": 150,
+            "height_in": 64,
+            "sex": "female",
+            "activity_level": "lightly_active",
+            "goal": "maintain",
+            "dietary_restrictions": [],
+            "allergies": [],
+            "budget_weekly": 120,
+            "household_size": 1,
+            "cooking_skill": "intermediate",
+            "schedule_json": {"weeknight_dinner": "25m"},
+        },
+    }
+
+    with client:
+        first_run = client.post("/v1/runs", json=payload)
+        assert first_run.status_code == 201, first_run.text
+        completed_first = _wait_for_run_completion(client, first_run.json()["run_id"])
+        first_grocery_list = completed_first["state_snapshot"]["grocery_list"]
+        assert completed_first["state_snapshot"]["phase_statuses"]["planning"] == "completed"
+        assert completed_first["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
+        assert first_grocery_list
+
+        fully_owned_item = next(
+            item
+            for item in first_grocery_list
+            if item["quantity"] > 0
+        )
+        partially_owned_item = next(
+            item
+            for item in first_grocery_list
+            if item["name"] != fully_owned_item["name"] and item["quantity"] >= 0.5
+        )
+
+        inventory_response = client.post(
+            "/v1/users/fridge-check/inventory",
+            json={
+                "name": fully_owned_item["name"],
+                "quantity": fully_owned_item["quantity"],
+                "unit": fully_owned_item["unit"],
+                "category": fully_owned_item["category"],
+                "expiry_date": "2026-04-05",
+            },
+        )
+        assert inventory_response.status_code == 201, inventory_response.text
+        partial_inventory_response = client.post(
+            "/v1/users/fridge-check/inventory",
+            json={
+                "name": partially_owned_item["name"],
+                "quantity": round(max(partially_owned_item["quantity"] / 2.0, 0.25), 2),
+                "unit": partially_owned_item["unit"],
+                "category": partially_owned_item["category"],
+                "expiry_date": "2026-04-06",
+            },
+        )
+        assert partial_inventory_response.status_code == 201, partial_inventory_response.text
+
+        second_run = client.post("/v1/runs", json=payload)
+        assert second_run.status_code == 201, second_run.text
+        completed_second = _wait_for_run_completion(client, second_run.json()["run_id"])
+        assert completed_second["state_snapshot"]["phase_statuses"]["planning"] == "completed"
+        assert completed_second["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
+        assert len(completed_second["state_snapshot"]["selected_meals"]) == 28
+        assert completed_second["state_snapshot"]["grocery_list"]
+
+        owned_item = next(
+            item
+            for item in completed_second["state_snapshot"]["grocery_list"]
+            if item["name"] == fully_owned_item["name"]
+        )
+        partial_item = next(
+            item
+            for item in completed_second["state_snapshot"]["grocery_list"]
+            if item["name"] == partially_owned_item["name"]
+        )
+        assert owned_item["already_have"] is True
+        assert owned_item["shopping_quantity"] == 0
+        assert partial_item["already_have"] is False
+        assert 0 < partial_item["quantity_in_fridge"] < partial_item["quantity"]
+        assert 0 < partial_item["shopping_quantity"] < partial_item["quantity"]
 
 
 def test_resume_endpoint_is_explicitly_deferred_in_phase_one(tmp_path):

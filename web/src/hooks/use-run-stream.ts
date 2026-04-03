@@ -9,38 +9,19 @@ import type { PhaseStatus, PlannerStateSnapshot, RunEvent, RunLifecycleStatus, R
 type StreamState = {
   events: RunEvent[];
   isStreaming: boolean;
-  status: RunLifecycleStatus;
-  currentPhase: PlannerStateSnapshot["current_phase"];
 };
 
-export function useRunStream(runId: string | null): StreamState {
+export function useRunStream(runId: string): StreamState {
   const queryClient = useQueryClient();
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const [status, setStatus] = useState<RunLifecycleStatus>("running");
-  const [currentPhase, setCurrentPhase] = useState<PlannerStateSnapshot["current_phase"]>(null);
 
   useEffect(() => {
-    if (!runId) {
-      setEvents([]);
-      setIsStreaming(false);
-      setStatus("pending");
-      setCurrentPhase(null);
-      return;
-    }
-
     const cachedEvents = queryClient.getQueryData<RunEvent[]>(["run-events", runId]) ?? [];
-    const cachedRun = queryClient.getQueryData<RunRead>(["run", runId]);
     setEvents(cachedEvents);
-    setStatus(cachedRun?.status ?? "running");
-    setCurrentPhase(cachedRun?.state_snapshot.current_phase ?? null);
   }, [queryClient, runId]);
 
   useEffect(() => {
-    if (!runId) {
-      return;
-    }
-
     const handleEvent = (event: RunEvent) => {
       setEvents((previousEvents) => {
         if (previousEvents.some((existingEvent) => existingEvent.event_id === event.event_id)) {
@@ -50,9 +31,6 @@ export function useRunStream(runId: string | null): StreamState {
         queryClient.setQueryData(["run-events", runId], nextEvents);
         return nextEvents;
       });
-
-      setCurrentPhase((previousPhase) => event.phase ?? previousPhase);
-      setStatus(deriveRunStatus(event));
 
       queryClient.setQueryData<RunRead | undefined>(["run", runId], (currentRun) => {
         if (!currentRun) {
@@ -81,7 +59,7 @@ export function useRunStream(runId: string | null): StreamState {
     };
   }, [queryClient, runId]);
 
-  return { events, isStreaming, status, currentPhase };
+  return { events, isStreaming };
 }
 
 function isTerminalEvent(event: RunEvent): boolean {

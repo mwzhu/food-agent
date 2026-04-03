@@ -50,6 +50,7 @@ def create_app(settings: Optional[Settings] = None) -> FastAPI:
             context_assembler=context_assembler,
             memory_store=memory_store,
             recipe_store=recipe_store,
+            session_factory=session_factory,
             reranker=reranker,
             chat_model=chat_model,
         )

@@ -9,10 +9,10 @@ from langgraph.graph import END, START, StateGraph
 from shopper.agents.events import EventEmitter, bind_event_emitter, emit_run_event
 from shopper.agents.nodes import LoadMemoryNode
 from shopper.agents.replan import derive_replan_feedback
-from shopper.agents.state import PlannerState, PlanningSubgraphState
-from shopper.agents.subgraphs import build_critic_subgraph, build_planning_subgraph
+from shopper.agents.state import PlannerState, PlanningSubgraphState, ShoppingSubgraphState
+from shopper.agents.subgraphs import build_critic_subgraph, build_planning_subgraph, build_shopping_subgraph
 from shopper.agents.supervisor import route_from_critic, route_from_supervisor, supervisor_node
-from shopper.agents.tools import RecipeSearchTool
+from shopper.agents.tools import RecipeSearchTool, build_get_fridge_contents_tool
 from shopper.config import Settings
 from shopper.memory import ContextAssembler, MemoryStore
 from shopper.retrieval import QdrantRecipeStore, RecipeReranker
@@ -22,18 +22,23 @@ TraceSource = Literal["api", "eval", "setup"]
 MAX_REPLAN_LOOPS = 1
 
 
-def _phase_statuses(memory: str, planning: str) -> dict[str, str]:
+def _phase_statuses(
+    memory: str,
+    planning: str,
+    shopping: str = "locked",
+    checkout: str = "locked",
+) -> dict[str, str]:
     return {
         "memory": memory,
         "planning": planning,
-        "shopping": "locked",
-        "checkout": "locked",
+        "shopping": shopping,
+        "checkout": checkout,
     }
 
 
 def _graph_invoke_config(state: Dict[str, Any], source: TraceSource) -> Dict[str, Any]:
     metadata = {
-        "phase": "phase2",
+        "phase": "phase3",
         "source": source,
         "shopper_run_id": state["run_id"],
         "user_id": state["user_id"],
@@ -52,6 +57,7 @@ def _trace_outputs_summary(result: Dict[str, Any]) -> Dict[str, Any]:
         "current_phase": result.get("current_phase"),
         "current_node": result.get("current_node"),
         "selected_meal_count": len(result.get("selected_meals", [])),
+        "grocery_item_count": len(result.get("grocery_list", [])),
         "critic_passed": critic_verdict.get("passed"),
     }
 
@@ -60,10 +66,12 @@ def build_planner_graph(
     context_assembler: ContextAssembler,
     memory_store: MemoryStore,
     recipe_store: QdrantRecipeStore,
+    session_factory=None,
     reranker=None,
     chat_model=None,
 ):
     recipe_search = RecipeSearchTool(recipe_store=recipe_store, reranker=reranker or RecipeReranker())
+    get_fridge_contents_tool = build_get_fridge_contents_tool(session_factory)
     load_memory_node = LoadMemoryNode(context_assembler=context_assembler, memory_store=memory_store)
     planning_subgraph = build_planning_subgraph(
         context_assembler=context_assembler,
@@ -74,6 +82,9 @@ def build_planner_graph(
         context_assembler=context_assembler,
         recipe_store=recipe_store,
         chat_model=chat_model,
+    )
+    shopping_subgraph = build_shopping_subgraph(
+        get_fridge_contents_tool=get_fridge_contents_tool,
     )
 
     async def load_memory_wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -157,37 +168,89 @@ def build_planner_graph(
         result = await critic_subgraph.ainvoke(state)
         verdict = result["critic_verdict"]
         passed = bool(verdict["passed"])
-        should_retry = (not passed) and state["replan_count"] < MAX_REPLAN_LOOPS
+        current_phase = state.get("current_phase", "planning")
+        assert current_phase in ("planning", "shopping")
         await emit_run_event(
             run_id=state["run_id"],
             event_type="phase_completed",
-            phase="planning",
+            phase=current_phase,
             node_name="critic",
-            message="Planning phase {status} verification.".format(
-                status="passed" if passed else "failed"
+            message="{phase} phase {status} verification.".format(
+                phase=str(current_phase).title(),
+                status="passed" if passed else "failed",
             ),
             data={"passed": passed},
         )
-        if passed or not should_retry:
+        if current_phase == "planning":
+            should_retry = (not passed) and state["replan_count"] < MAX_REPLAN_LOOPS
+            if not passed and not should_retry:
+                await emit_run_event(
+                    run_id=state["run_id"],
+                    event_type="run_completed",
+                    phase=current_phase,
+                    node_name="critic",
+                    message="Run failed.",
+                    data={"status": "failed"},
+                )
+            if passed:
+                next_phase_statuses = _phase_statuses("completed", "completed", "pending")
+                next_status = "running"
+            elif should_retry:
+                next_phase_statuses = _phase_statuses("completed", "running")
+                next_status = "running"
+            else:
+                next_phase_statuses = _phase_statuses("completed", "failed")
+                next_status = "failed"
+        else:
             await emit_run_event(
                 run_id=state["run_id"],
                 event_type="run_completed",
-                phase="planning",
+                phase=current_phase,
                 node_name="critic",
                 message="Run {status}.".format(status="completed" if passed else "failed"),
                 data={"status": "completed" if passed else "failed"},
             )
+            next_phase_statuses = _phase_statuses(
+                "completed",
+                "completed",
+                "completed" if passed else "failed",
+            )
+            next_status = "completed" if passed else "failed"
         return {
             "critic_verdict": verdict,
             "repair_instructions": result.get("repair_instructions", []),
             "context_metadata": result.get("context_metadata", []),
-            "status": "completed" if passed else "running" if should_retry else "failed",
+            "status": next_status,
             "current_node": "critic",
-            "current_phase": "planning",
-            "phase_statuses": _phase_statuses(
-                "completed",
-                "completed" if passed else "running" if should_retry else "failed",
-            ),
+            "current_phase": current_phase,
+            "phase_statuses": next_phase_statuses,
+            "trace_metadata": state["trace_metadata"],
+        }
+
+    async def shopping_subgraph_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        await emit_run_event(
+            run_id=state["run_id"],
+            event_type="phase_started",
+            phase="shopping",
+            node_name="shopping_subgraph",
+            message="Building a grocery list from the meal plan and fridge inventory.",
+        )
+        result = await shopping_subgraph.ainvoke(
+            ShoppingSubgraphState(
+                run_id=state["run_id"],
+                user_id=state["user_id"],
+                selected_meals=state["selected_meals"],
+                context_metadata=[],
+            )
+        )
+        return {
+            "grocery_list": result["grocery_list"],
+            "fridge_inventory": result["fridge_inventory"],
+            "context_metadata": result["context_metadata"],
+            "current_node": "shopping_subgraph",
+            "status": "running",
+            "current_phase": "shopping",
+            "phase_statuses": _phase_statuses("completed", "completed", "running"),
             "trace_metadata": state["trace_metadata"],
         }
 
@@ -195,6 +258,7 @@ def build_planner_graph(
     graph.add_node("supervisor", supervisor_node)
     graph.add_node("load_memory", load_memory_wrapper)
     graph.add_node("planning_subgraph", planning_subgraph_node)
+    graph.add_node("shopping_subgraph", shopping_subgraph_node)
     graph.add_node("critic_subgraph", critic_subgraph_node)
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
@@ -212,9 +276,11 @@ def build_planner_graph(
         lambda state: route_from_critic(state, max_replans=MAX_REPLAN_LOOPS),
         {
             "planning_subgraph": "planning_subgraph",
+            "shopping_subgraph": "shopping_subgraph",
             "end": END,
         },
     )
+    graph.add_edge("shopping_subgraph", "critic_subgraph")
     return graph.compile()
 
 

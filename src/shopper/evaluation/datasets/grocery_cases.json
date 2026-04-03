@@ -1,0 +1,1231 @@
+[
+  {
+    "case_id": "greek-yogurt-overlap",
+    "meal_plan": [
+      {
+        "day": "monday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-overnight-oats",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "monday",
+        "meal_type": "snack",
+        "recipe_id": "snack-apple-yogurt-cup",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 6,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "greek yogurt",
+          "quantity": 1.5,
+          "unit": "cup",
+          "category": "dairy",
+          "already_have": false,
+          "shopping_quantity": 1.5,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "chia seeds",
+          "quantity": 1.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "cinnamon",
+          "quantity": 1.23,
+          "unit": "ml",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.23,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "rolled oats",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "apple",
+          "quantity": 0.5,
+          "unit": "piece",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 0.5,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "blueberries",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "olive-oil-cross-unit",
+    "meal_plan": [
+      {
+        "day": "tuesday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-egg-spinach-toast",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "tuesday",
+        "meal_type": "dinner",
+        "recipe_id": "dinner-herb-chicken-sheet-pan",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 7,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "eggs",
+          "quantity": 2.0,
+          "unit": "piece",
+          "category": "dairy",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "chicken thighs",
+          "quantity": 6.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 6.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "olive oil",
+          "quantity": 1.33,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.33,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "sourdough bread",
+          "quantity": 2.0,
+          "unit": "slice",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "baby potatoes",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "broccoli",
+          "quantity": 1.5,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.5,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "spinach",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "tofu-double-up",
+    "meal_plan": [
+      {
+        "day": "wednesday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-tofu-scramble-wrap",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "wednesday",
+        "meal_type": "lunch",
+        "recipe_id": "lunch-soba-tofu-bowl",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 7,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "firm tofu",
+          "quantity": 10.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 10.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "edamame",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "salsa",
+          "quantity": 2.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "soba noodles",
+          "quantity": 2.5,
+          "unit": "oz",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.5,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "whole wheat tortilla",
+          "quantity": 1.0,
+          "unit": "piece",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "shredded carrots",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "spinach",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "brown-rice-multi-meal",
+    "meal_plan": [
+      {
+        "day": "thursday",
+        "meal_type": "lunch",
+        "recipe_id": "lunch-black-bean-burrito-bowl",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "thursday",
+        "meal_type": "dinner",
+        "recipe_id": "dinner-miso-tofu-stir-fry",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "thursday",
+        "meal_type": "snack",
+        "recipe_id": "lunch-edamame-rice-salad",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 10,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "firm tofu",
+          "quantity": 6.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 6.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "black beans",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 12.17,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "brown rice",
+          "quantity": 2.25,
+          "unit": "cup",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.25,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "cabbage",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "corn",
+          "quantity": 4.06,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 4.06,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "edamame",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 12.17,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "rice vinegar",
+          "quantity": 1.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "salsa",
+          "quantity": 2.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "broccoli",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "mushrooms",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "spinach-partial-fridge",
+    "meal_plan": [
+      {
+        "day": "friday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-egg-spinach-toast",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "friday",
+        "meal_type": "dinner",
+        "recipe_id": "dinner-turkey-meatball-orzo",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [
+      {
+        "name": "spinach",
+        "quantity": 1.0,
+        "unit": "cup",
+        "category": "produce"
+      }
+    ],
+    "expected": {
+      "total_items": 7,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "eggs",
+          "quantity": 2.0,
+          "unit": "piece",
+          "category": "dairy",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "ground turkey",
+          "quantity": 5.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 5.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "olive oil",
+          "quantity": 1.0,
+          "unit": "tsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "orzo",
+          "quantity": 2.5,
+          "unit": "oz",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.5,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "sourdough bread",
+          "quantity": 2.0,
+          "unit": "slice",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "crushed tomatoes",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "spinach",
+          "quantity": 2.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 1.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "greek-yogurt-already-owned",
+    "meal_plan": [
+      {
+        "day": "saturday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-overnight-oats",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "saturday",
+        "meal_type": "snack",
+        "recipe_id": "snack-apple-yogurt-cup",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [
+      {
+        "name": "greek yogurt",
+        "quantity": 2.0,
+        "unit": "cup",
+        "category": "dairy"
+      }
+    ],
+    "expected": {
+      "total_items": 6,
+      "already_have_count": 1,
+      "items": [
+        {
+          "name": "greek yogurt",
+          "quantity": 1.5,
+          "unit": "cup",
+          "category": "dairy",
+          "already_have": true,
+          "shopping_quantity": 0.0,
+          "quantity_in_fridge": 1.5
+        },
+        {
+          "name": "chia seeds",
+          "quantity": 1.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "cinnamon",
+          "quantity": 1.23,
+          "unit": "ml",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.23,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "rolled oats",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "apple",
+          "quantity": 0.5,
+          "unit": "piece",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 0.5,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "blueberries",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "frozen-fruit-category",
+    "meal_plan": [
+      {
+        "day": "sunday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-smoothie-bowl",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 4,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "cottage cheese",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "dairy",
+          "already_have": false,
+          "shopping_quantity": 12.17,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "frozen mango",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "frozen",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "pumpkin seeds",
+          "quantity": 1.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "banana",
+          "quantity": 0.5,
+          "unit": "piece",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 0.5,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "meat-and-produce-categories",
+    "meal_plan": [
+      {
+        "day": "monday",
+        "meal_type": "lunch",
+        "recipe_id": "lunch-chicken-quinoa-salad",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 4,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "chicken breast",
+          "quantity": 5.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 5.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "cooked quinoa",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 12.17,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "cucumber",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "tomatoes",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "snack-veggies-baseline",
+    "meal_plan": [
+      {
+        "day": "tuesday",
+        "meal_type": "snack",
+        "recipe_id": "snack-hummus-veggies",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 3,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "hummus",
+          "quantity": 4.06,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 4.06,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "carrots",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "cucumber",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "pantry-heavy-vegan-dinner",
+    "meal_plan": [
+      {
+        "day": "wednesday",
+        "meal_type": "dinner",
+        "recipe_id": "dinner-chickpea-tikka",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "wednesday",
+        "meal_type": "snack",
+        "recipe_id": "snack-chia-pudding",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 7,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "light coconut milk",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "dairy",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "oat milk",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "dairy",
+          "already_have": false,
+          "shopping_quantity": 12.17,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "basmati rice",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 12.17,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "chia seeds",
+          "quantity": 2.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "chickpeas",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "vanilla extract",
+          "quantity": 1.23,
+          "unit": "ml",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.23,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "tomato sauce",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "partial-multi-item-fridge",
+    "meal_plan": [
+      {
+        "day": "thursday",
+        "meal_type": "lunch",
+        "recipe_id": "lunch-black-bean-burrito-bowl",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "thursday",
+        "meal_type": "snack",
+        "recipe_id": "snack-hummus-veggies",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [
+      {
+        "name": "black beans",
+        "quantity": 0.25,
+        "unit": "cup",
+        "category": "pantry"
+      },
+      {
+        "name": "cucumber",
+        "quantity": 0.25,
+        "unit": "cup",
+        "category": "produce"
+      }
+    ],
+    "expected": {
+      "total_items": 7,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "black beans",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 8.11,
+          "quantity_in_fridge": 4.06
+        },
+        {
+          "name": "brown rice",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 12.17,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "corn",
+          "quantity": 4.06,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 4.06,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "hummus",
+          "quantity": 4.06,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 4.06,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "salsa",
+          "quantity": 2.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "carrots",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "cucumber",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 4.06,
+          "quantity_in_fridge": 4.06
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "tofu-wrap-tortilla-owned",
+    "meal_plan": [
+      {
+        "day": "friday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-tofu-scramble-wrap",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "friday",
+        "meal_type": "snack",
+        "recipe_id": "lunch-turkey-hummus-wrap",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [
+      {
+        "name": "whole wheat tortilla",
+        "quantity": 2.0,
+        "unit": "piece",
+        "category": "pantry"
+      }
+    ],
+    "expected": {
+      "total_items": 7,
+      "already_have_count": 1,
+      "items": [
+        {
+          "name": "firm tofu",
+          "quantity": 5.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 5.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "turkey breast",
+          "quantity": 4.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 4.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "hummus",
+          "quantity": 3.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 3.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "salsa",
+          "quantity": 2.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "whole wheat tortilla",
+          "quantity": 2.0,
+          "unit": "piece",
+          "category": "pantry",
+          "already_have": true,
+          "shopping_quantity": 0.0,
+          "quantity_in_fridge": 2.0
+        },
+        {
+          "name": "lettuce",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "spinach",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "berries-and-tomatoes-mix",
+    "meal_plan": [
+      {
+        "day": "saturday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-greek-yogurt-bowl",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "saturday",
+        "meal_type": "breakfast",
+        "recipe_id": "breakfast-cottage-cheese-toast",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 8,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "cottage cheese",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "dairy",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "greek yogurt",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "dairy",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "granola",
+          "quantity": 4.06,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 4.06,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "honey",
+          "quantity": 1.0,
+          "unit": "tsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "sourdough bread",
+          "quantity": 2.0,
+          "unit": "slice",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 2.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "black pepper",
+          "quantity": 1.23,
+          "unit": "ml",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.23,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "strawberries",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "tomatoes",
+          "quantity": 8.12,
+          "unit": "tbsp",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 8.12,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "double-broccoli-dinner",
+    "meal_plan": [
+      {
+        "day": "sunday",
+        "meal_type": "dinner",
+        "recipe_id": "dinner-herb-chicken-sheet-pan",
+        "serving_multiplier": 1.0
+      },
+      {
+        "day": "sunday",
+        "meal_type": "dinner",
+        "recipe_id": "dinner-miso-tofu-stir-fry",
+        "serving_multiplier": 1.0
+      }
+    ],
+    "fridge_inventory": [],
+    "expected": {
+      "total_items": 7,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "chicken thighs",
+          "quantity": 6.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 6.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "firm tofu",
+          "quantity": 6.0,
+          "unit": "oz",
+          "category": "meat",
+          "already_have": false,
+          "shopping_quantity": 6.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "brown rice",
+          "quantity": 12.17,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 12.17,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "olive oil",
+          "quantity": 1.0,
+          "unit": "tbsp",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "baby potatoes",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "broccoli",
+          "quantity": 2.5,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 2.5,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "mushrooms",
+          "quantity": 1.0,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.0
+        }
+      ]
+    }
+  },
+  {
+    "case_id": "serving-multiplier-scale-up",
+    "meal_plan": [
+      {
+        "day": "monday",
+        "meal_type": "dinner",
+        "recipe_id": "dinner-white-bean-pasta",
+        "serving_multiplier": 1.5
+      }
+    ],
+    "fridge_inventory": [
+      {
+        "name": "spinach",
+        "quantity": 0.5,
+        "unit": "cup",
+        "category": "produce"
+      }
+    ],
+    "expected": {
+      "total_items": 4,
+      "already_have_count": 0,
+      "items": [
+        {
+          "name": "chickpea pasta",
+          "quantity": 3.75,
+          "unit": "oz",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 3.75,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "white beans",
+          "quantity": 1.13,
+          "unit": "cup",
+          "category": "pantry",
+          "already_have": false,
+          "shopping_quantity": 1.13,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "crushed tomatoes",
+          "quantity": 1.13,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.13,
+          "quantity_in_fridge": 0.0
+        },
+        {
+          "name": "spinach",
+          "quantity": 1.5,
+          "unit": "cup",
+          "category": "produce",
+          "already_have": false,
+          "shopping_quantity": 1.0,
+          "quantity_in_fridge": 0.5
+        }
+      ]
+    }
+  }
+]

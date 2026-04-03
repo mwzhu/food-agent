@@ -5,6 +5,8 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from shopper.schemas.grocery import GroceryItem
+from shopper.schemas.inventory import FridgeItemSnapshot
 from shopper.schemas.user import UserProfileBase
 
 
@@ -128,6 +130,8 @@ class PlannerStateSnapshot(BaseModel):
     user_profile: UserProfileBase
     nutrition_plan: Optional[NutritionPlan] = None
     selected_meals: List[MealSlot] = Field(default_factory=list)
+    grocery_list: List[GroceryItem] = Field(default_factory=list)
+    fridge_inventory: List[FridgeItemSnapshot] = Field(default_factory=list)
     user_preferences_learned: PreferenceSummary = Field(default_factory=PreferenceSummary)
     retrieved_memories: List[Dict[str, Any]] = Field(default_factory=list)
     critic_verdict: Optional[CriticVerdict] = None
@@ -161,12 +165,25 @@ class PlannerStateSnapshot(BaseModel):
         )
 
     def as_failed(self, message: str) -> "PlannerStateSnapshot":
+        phase = self.current_phase or "planning"
+        phase_statuses = self.phase_statuses.model_copy(deep=True)
+        if phase == "memory":
+            phase_statuses.memory = "failed"
+        elif phase == "planning":
+            phase_statuses.memory = "completed"
+            phase_statuses.planning = "failed"
+        elif phase == "shopping":
+            phase_statuses.memory = "completed"
+            phase_statuses.planning = "completed"
+            phase_statuses.shopping = "failed"
+        else:
+            phase_statuses.checkout = "failed"
         return self.model_copy(
             update={
                 "status": "failed",
                 "latest_error": message,
-                "current_phase": "planning",
+                "current_phase": phase,
                 "current_node": "error",
-                "phase_statuses": PhaseStatuses(memory="completed", planning="failed"),
+                "phase_statuses": phase_statuses,
             }
         )

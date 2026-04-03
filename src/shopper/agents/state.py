@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import operator
-from typing import Any, Annotated, Dict, List, Literal, TypedDict
+from typing import Any, Annotated, Dict, List, Optional, TypedDict
 
 from langchain_core.messages import BaseMessage
 from langgraph.graph import add_messages
@@ -45,6 +45,27 @@ class CriticVerdictState(TypedDict):
     repair_instructions: List[str]
 
 
+class GroceryItemState(TypedDict):
+    name: str
+    quantity: float
+    unit: Optional[str]
+    category: str
+    already_have: bool
+    shopping_quantity: float
+    quantity_in_fridge: float
+    source_recipe_ids: List[str]
+
+
+class FridgeItemState(TypedDict):
+    item_id: int
+    user_id: str
+    name: str
+    quantity: float
+    unit: Optional[str]
+    category: str
+    expiry_date: Optional[str]
+
+
 class PhaseStatusesState(TypedDict):
     memory: PhaseStatus
     planning: PhaseStatus
@@ -58,6 +79,8 @@ class PlannerState(TypedDict, total=False):
     user_profile: Dict[str, Any]
     nutrition_plan: NutritionPlanState
     selected_meals: List[MealSlotState]
+    grocery_list: List[GroceryItemState]
+    fridge_inventory: List[FridgeItemState]
     user_preferences_learned: Dict[str, Any]
     retrieved_memories: List[Dict[str, Any]]
     critic_verdict: CriticVerdictState
@@ -89,3 +112,12 @@ class PlanningSubgraphState(TypedDict, total=False):
     replan_count: int
     context_metadata: Annotated[List[Dict[str, Any]], operator.add]
     messages: Annotated[List[BaseMessage], add_messages]
+
+
+class ShoppingSubgraphState(TypedDict, total=False):
+    run_id: str
+    user_id: str
+    selected_meals: List[MealSlotState]
+    grocery_list: List[GroceryItemState]
+    fridge_inventory: List[FridgeItemState]
+    context_metadata: Annotated[List[Dict[str, Any]], operator.add]
