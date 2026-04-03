@@ -82,8 +82,10 @@ class PlanningSubgraphState(TypedDict, total=False):
     selected_meals: List[MealSlotState]
     user_preferences_learned: Dict[str, Any]
     retrieved_memories: List[Dict[str, Any]]
+    critic_verdict: CriticVerdictState
     repair_instructions: List[str]
     blocked_recipe_ids: List[str]
     avoid_cuisines: List[str]
+    replan_count: int
     context_metadata: Annotated[List[Dict[str, Any]], operator.add]
     messages: Annotated[List[BaseMessage], add_messages]

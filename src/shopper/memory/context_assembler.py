@@ -6,7 +6,7 @@ from typing import Any, Dict, Literal, Mapping, Optional
 from shopper.config import Settings, get_settings
 from shopper.memory.store import MemoryStore
 from shopper.memory.types import AssembledContext, ContextBudget, EpisodicMemory
-from shopper.schemas import MealSlot, NutritionPlan, PreferenceSummary
+from shopper.schemas import CriticVerdict, MealSlot, NutritionPlan, PreferenceSummary
 
 
 NodeName = Literal["load_memory", "nutrition_planner", "meal_selector", "critic"]
@@ -53,6 +53,17 @@ class ContextAssembler:
                 "preference_summary": self._compact_preference_summary(preferences),
                 "top_k_memories": [self._trim_string(memory.content, limit=240) for memory in memories],
             }
+            prior_meals = [MealSlot.model_validate(meal) for meal in state.get("selected_meals", [])]
+            critic_verdict_payload = state.get("critic_verdict")
+            if prior_meals and critic_verdict_payload is not None:
+                critic_verdict = CriticVerdict.model_validate(critic_verdict_payload)
+                payload["previous_failed_plan"] = self._compact_meals(prior_meals)
+                payload["critic_feedback"] = {
+                    "issues": critic_verdict.issues,
+                    "warnings": critic_verdict.warnings,
+                    "repair_instructions": critic_verdict.repair_instructions,
+                }
+                payload["replan_attempt"] = state.get("replan_count", 0)
             token_budget = 3200
         elif node_name == "critic":
             nutrition_plan = NutritionPlan.model_validate(state["nutrition_plan"])
@@ -158,6 +169,13 @@ class ContextAssembler:
                 trimmed_memories.pop()
             if "top_k_memories" not in dropped_fields:
                 dropped_fields.append("top_k_memories")
+
+        while self._estimate_tokens(trimmed_payload) > token_budget and trimmed_payload.get("previous_failed_plan"):
+            current_meals = list(trimmed_payload["previous_failed_plan"])
+            current_meals.pop()
+            trimmed_payload["previous_failed_plan"] = current_meals
+            if "previous_failed_plan" not in dropped_fields:
+                dropped_fields.append("previous_failed_plan")
 
         while self._estimate_tokens(trimmed_payload) > token_budget and trimmed_payload.get("selected_meals"):
             current_meals = list(trimmed_payload["selected_meals"])

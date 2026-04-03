@@ -65,3 +65,78 @@ def test_context_assembler_trims_payload_to_budget():
     assert context.budget.tokens_used <= context.budget.token_budget
     assert context.budget.fields_dropped
     assert len(context.payload.get("top_k_memories", [])) < len(state["retrieved_memories"])
+
+
+def test_context_assembler_includes_failed_plan_and_critic_feedback_for_replans():
+    assembler = ContextAssembler(
+        memory_store=DummyMemoryStore(),
+        settings=Settings(
+            SHOPPER_APP_ENV="test",
+            SHOPPER_CONTEXT_TOKENIZER="cl100k_base",
+            LANGSMITH_TRACING=False,
+        ),
+    )
+    state = {
+        "user_profile": {
+            "age": 29,
+            "sex": "female",
+            "activity_level": "lightly_active",
+            "goal": "maintain",
+            "budget_weekly": 130,
+            "household_size": 1,
+            "cooking_skill": "intermediate",
+            "dietary_restrictions": ["vegetarian"],
+            "allergies": ["peanut"],
+            "schedule_json": {"weekday": "quick dinner"},
+        },
+        "nutrition_plan": {
+            "tdee": 2400,
+            "daily_calories": 2200,
+            "protein_g": 160,
+            "carbs_g": 220,
+            "fat_g": 70,
+            "fiber_g": 30,
+            "goal": "maintain",
+            "applied_restrictions": ["vegetarian"],
+        },
+        "user_preferences_learned": {
+            "preferred_cuisines": ["thai"],
+            "avoided_ingredients": ["peanut"],
+            "preferred_meal_types": ["dinner"],
+            "notes": ["prefers high-protein meals"],
+        },
+        "retrieved_memories": [],
+        "selected_meals": [
+            {
+                "day": "monday",
+                "meal_type": "dinner",
+                "recipe_id": "repeat-dinner",
+                "recipe_name": "Repeat Dinner",
+                "cuisine": "thai",
+                "prep_time_min": 20,
+                "serving_multiplier": 1.0,
+                "calories": 540,
+                "protein_g": 34,
+                "carbs_g": 48,
+                "fat_g": 16,
+                "tags": ["high-protein"],
+                "macro_fit_score": 0.61,
+                "recipe": None,
+            }
+        ],
+        "critic_verdict": {
+            "passed": False,
+            "issues": ["Meal slot repeat-dinner drifted too far from the recipe source nutrition."],
+            "warnings": ["Cuisine repeat detected for thai around monday."],
+            "repair_instructions": ["Choose a dinner with tighter nutrition grounding."],
+        },
+        "replan_count": 1,
+    }
+
+    context = asyncio.run(assembler.build_context("meal_selector", state))
+
+    assert context.payload["previous_failed_plan"][0]["recipe_id"] == "repeat-dinner"
+    assert context.payload["critic_feedback"]["repair_instructions"] == [
+        "Choose a dinner with tighter nutrition grounding."
+    ]
+    assert context.payload["replan_attempt"] == 1
