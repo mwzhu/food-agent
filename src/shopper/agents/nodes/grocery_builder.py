@@ -22,8 +22,11 @@ class GroceryBuilderNode:
         )
 
         meals = [MealSlot.model_validate(item) for item in state["selected_meals"]]
-        fridge_payload = await self.get_fridge_contents_tool.ainvoke({"user_id": state["user_id"]})
-        fridge_inventory = [FridgeItemSnapshot.model_validate(item) for item in fridge_payload]
+        if state.get("fridge_inventory"):
+            fridge_inventory = [FridgeItemSnapshot.model_validate(item) for item in state["fridge_inventory"]]
+        else:
+            fridge_payload = await self.get_fridge_contents_tool.ainvoke({"user_id": state["user_id"]})
+            fridge_inventory = [FridgeItemSnapshot.model_validate(item) for item in fridge_payload]
         grocery_list = categorize(
             diff_against_fridge(
                 aggregate_quantities(extract_ingredients(meals)),

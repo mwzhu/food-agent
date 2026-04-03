@@ -15,7 +15,7 @@ from shopper.agents.tools import RecipeSearchTool
 from shopper.memory import ContextAssembler
 from shopper.schemas import ContextMetadata, MealSlot, MealType, NutritionPlan, PreferenceSummary, RecipeRecord
 from shopper.schemas.user import UserProfileBase
-from shopper.validators import expand_allergy_terms
+from shopper.validators import expand_allergy_terms, prep_cap_for_day
 
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "meal_selector.md"
@@ -544,28 +544,4 @@ class MealSelectorNode:
         return round(max(0.0, min(1.0, score)), 3)
 
     def _prep_cap(self, profile: UserProfileBase, meal_type: MealType, day: str) -> int:
-        defaults = {"breakfast": 15, "lunch": 20, "dinner": 35, "snack": 10}
-        if meal_type != "dinner":
-            return defaults[meal_type]
-
-        schedule = {str(key).lower(): str(value).lower() for key, value in profile.schedule_json.items()}
-        matching_entries = [
-            value
-            for key, value in schedule.items()
-            if day[:3] in key or day in key or "weeknight" in key or "weekday" in key
-        ]
-        if "saturday" in day or "sunday" in day:
-            matching_entries.extend(
-                value for key, value in schedule.items() if "weekend" in key or "saturday" in key or "sunday" in key
-            )
-
-        for entry in matching_entries:
-            digits = "".join(character for character in entry if character.isdigit())
-            if digits:
-                return max(15, int(digits))
-            if "quick" in entry:
-                return 25
-            if "flex" in entry or "slow" in entry:
-                return 45
-
-        return defaults[meal_type]
+        return prep_cap_for_day(profile.schedule_json, meal_type, day)

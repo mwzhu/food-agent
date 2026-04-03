@@ -1,0 +1,32 @@
+[
+  {
+    "case_id": "category-produce-spinach",
+    "name": "spinach",
+    "expected_category": "produce"
+  },
+  {
+    "case_id": "category-dairy-yogurt",
+    "name": "greek yogurt",
+    "expected_category": "dairy"
+  },
+  {
+    "case_id": "category-meat-salmon",
+    "name": "salmon fillet",
+    "expected_category": "meat"
+  },
+  {
+    "case_id": "category-frozen-berries",
+    "name": "frozen berries",
+    "expected_category": "frozen"
+  },
+  {
+    "case_id": "category-pantry-olive-oil",
+    "name": "olive oil",
+    "expected_category": "pantry"
+  },
+  {
+    "case_id": "category-meat-tofu",
+    "name": "firm tofu",
+    "expected_category": "meat"
+  }
+]

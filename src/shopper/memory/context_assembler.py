@@ -6,10 +6,17 @@ from typing import Any, Dict, Literal, Mapping, Optional
 from shopper.config import Settings, get_settings
 from shopper.memory.store import MemoryStore
 from shopper.memory.types import AssembledContext, ContextBudget, EpisodicMemory
-from shopper.schemas import CriticVerdict, GroceryItem, MealSlot, NutritionPlan, PreferenceSummary
+from shopper.schemas import CriticVerdict, FridgeItemSnapshot, GroceryItem, MealSlot, NutritionPlan, PreferenceSummary
 
 
-NodeName = Literal["load_memory", "nutrition_planner", "meal_selector", "critic"]
+NodeName = Literal[
+    "load_memory",
+    "nutrition_planner",
+    "meal_selector",
+    "critic",
+    "planning_critic",
+    "shopping_critic",
+]
 
 
 class ContextAssembler:
@@ -65,17 +72,27 @@ class ContextAssembler:
                 }
                 payload["replan_attempt"] = state.get("replan_count", 0)
             token_budget = 3200
-        elif node_name == "critic":
+        elif node_name in {"critic", "planning_critic"}:
             nutrition_plan = NutritionPlan.model_validate(state["nutrition_plan"])
             meals = [MealSlot.model_validate(meal) for meal in state["selected_meals"]]
             memories = []
             payload = {
+                "user_profile_summary": self._profile_summary(profile),
                 "nutrition_plan": self._compact_nutrition_plan(nutrition_plan),
+                "schedule": self._compact_schedule(profile["schedule_json"]),
                 "selected_meals": self._compact_meals(meals),
                 "allergies": profile["allergies"],
                 "dietary_restrictions": profile["dietary_restrictions"],
             }
-            if state.get("current_phase") == "shopping" and state.get("grocery_list"):
+            token_budget = 2200
+        elif node_name == "shopping_critic":
+            meals = [MealSlot.model_validate(meal) for meal in state["selected_meals"]]
+            memories = []
+            payload = {
+                "user_profile_summary": self._profile_summary(profile),
+                "selected_meals": self._compact_meals(meals),
+            }
+            if state.get("grocery_list"):
                 grocery_list = [GroceryItem.model_validate(item) for item in state["grocery_list"]]
                 payload["grocery_list"] = [
                     {
@@ -85,10 +102,15 @@ class ContextAssembler:
                         "unit": item.unit,
                         "category": item.category,
                         "already_have": item.already_have,
+                        "quantity_in_fridge": item.quantity_in_fridge,
+                        "source_recipe_ids": item.source_recipe_ids,
                     }
                     for item in grocery_list
                 ]
-            token_budget = 1800
+            if state.get("fridge_inventory"):
+                fridge_inventory = [FridgeItemSnapshot.model_validate(item) for item in state["fridge_inventory"]]
+                payload["fridge_inventory"] = self._compact_fridge_inventory(fridge_inventory)
+            token_budget = 2200
         else:
             assert False, node_name
 
@@ -153,6 +175,18 @@ class ContextAssembler:
             for meal in meals
         ]
 
+    def _compact_fridge_inventory(self, fridge_inventory: list[FridgeItemSnapshot]) -> list[Dict[str, Any]]:
+        return [
+            {
+                "name": item.name,
+                "quantity": item.quantity,
+                "unit": item.unit,
+                "category": item.category,
+                "expiry_date": item.expiry_date,
+            }
+            for item in fridge_inventory
+        ]
+
     def _estimate_tokens(self, payload: Mapping[str, Any]) -> int:
         serialized = self._serialize_payload(payload)
         if not serialized:
@@ -196,6 +230,20 @@ class ContextAssembler:
             trimmed_payload["selected_meals"] = current_meals
             if "selected_meals" not in dropped_fields:
                 dropped_fields.append("selected_meals")
+
+        while self._estimate_tokens(trimmed_payload) > token_budget and trimmed_payload.get("grocery_list"):
+            current_grocery_list = list(trimmed_payload["grocery_list"])
+            current_grocery_list.pop()
+            trimmed_payload["grocery_list"] = current_grocery_list
+            if "grocery_list" not in dropped_fields:
+                dropped_fields.append("grocery_list")
+
+        while self._estimate_tokens(trimmed_payload) > token_budget and trimmed_payload.get("fridge_inventory"):
+            current_fridge_inventory = list(trimmed_payload["fridge_inventory"])
+            current_fridge_inventory.pop()
+            trimmed_payload["fridge_inventory"] = current_fridge_inventory
+            if "fridge_inventory" not in dropped_fields:
+                dropped_fields.append("fridge_inventory")
 
         for field_name in ("preference_summary", "schedule", "dietary_restrictions", "allergies"):
             if self._estimate_tokens(trimmed_payload) <= token_budget:
