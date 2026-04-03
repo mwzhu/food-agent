@@ -65,6 +65,7 @@ class RunManager:
         task.add_done_callback(lambda completed: self._tasks.pop(run_id, None))
 
     async def _execute_run(self, run_id: str, initial_state: Dict[str, object]) -> None:
+        snapshot = PlannerStateSnapshot.model_validate(initial_state)
         try:
             result = await invoke_planner_graph(
                 graph=self.graph,
@@ -75,13 +76,13 @@ class RunManager:
             )
             await self._persist_result(run_id, result, status=result["status"])
         except Exception as exc:  # pragma: no cover - exercised through integration path
-            failed_snapshot = PlannerStateSnapshot.model_validate(initial_state).as_failed(str(exc))
+            failed_snapshot = snapshot.as_failed(str(exc))
             await self.publish(
                 RunEvent(
                     event_id=run_id + "-error",
                     run_id=run_id,
                     event_type="error",
-                    phase="planning",
+                    phase=snapshot.current_phase or "planning",
                     node_name="planner",
                     message=str(exc),
                     data={},

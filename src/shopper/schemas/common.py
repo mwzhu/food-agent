@@ -187,3 +187,30 @@ class PlannerStateSnapshot(BaseModel):
                 "phase_statuses": phase_statuses,
             }
         )
+
+    def as_shopping_run(self, *, run_id: str) -> "PlannerStateSnapshot":
+        assert self.selected_meals
+        assert self.nutrition_plan is not None
+        return self.model_copy(
+            update={
+                "run_id": run_id,
+                "status": "running",
+                "grocery_list": [],
+                "fridge_inventory": [],
+                "critic_verdict": None,
+                "repair_instructions": [],
+                "blocked_recipe_ids": [],
+                "avoid_cuisines": [],
+                "context_metadata": [],
+                "current_node": "supervisor",
+                "current_phase": "shopping",
+                "phase_statuses": PhaseStatuses(
+                    memory="completed",
+                    planning="completed",
+                    shopping="running",
+                ),
+                "replan_count": 0,
+                "latest_error": None,
+                "trace_metadata": TraceMetadata(),
+            }
+        )

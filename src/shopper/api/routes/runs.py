@@ -83,9 +83,38 @@ async def get_run_trace(run_id: str, session: AsyncSession = Depends(get_db_sess
     )
 
 
+@router.post("/{run_id}/shopping", response_model=RunRead, status_code=status.HTTP_201_CREATED)
+async def create_shopping_run(
+    run_id: str,
+    session: AsyncSession = Depends(get_db_session),
+    run_manager=Depends(get_run_manager),
+) -> RunRead:
+    source_run = await session.get(PlanRun, run_id)
+    if source_run is None:
+        raise HTTPException(status_code=404, detail="Run not found.")
+
+    snapshot = PlannerStateSnapshot.model_validate(source_run.state_snapshot)
+    if not snapshot.selected_meals:
+        raise HTTPException(status_code=400, detail="A meal plan is required before shopping can start.")
+
+    next_run_id = str(uuid4())
+    next_state = snapshot.as_shopping_run(run_id=next_run_id).model_dump(mode="json")
+    shopping_run = PlanRun(
+        run_id=next_run_id,
+        user_id=source_run.user_id,
+        status="running",
+        state_snapshot=next_state,
+    )
+    session.add(shopping_run)
+    await session.commit()
+    await session.refresh(shopping_run)
+    run_manager.start_run(run_id=next_run_id, initial_state=next_state)
+    return RunRead.model_validate(shopping_run)
+
+
 @router.post("/{run_id}/resume", status_code=status.HTTP_501_NOT_IMPLEMENTED)
 async def resume_run(run_id: str) -> dict:
     return {
         "run_id": run_id,
-        "detail": "Resume is not available in Phase 1.",
+        "detail": "Resume is not available in Phase 3.",
     }

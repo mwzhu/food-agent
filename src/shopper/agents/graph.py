@@ -267,6 +267,7 @@ def build_planner_graph(
         {
             "load_memory": "load_memory",
             "planning_subgraph": "planning_subgraph",
+            "shopping_subgraph": "shopping_subgraph",
         },
     )
     graph.add_edge("load_memory", "planning_subgraph")
