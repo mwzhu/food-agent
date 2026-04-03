@@ -2,7 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { createRun, getRun, getRunTrace, listRuns } from "@/lib/api";
+import { createRun, createShoppingRun, getRun, getRunTrace, listRuns } from "@/lib/api";
 import type { RunCreateRequest, RunRead, RunTraceRead } from "@/lib/types";
 
 export function useRuns(userId: string | null, limit = 10) {
@@ -31,6 +31,18 @@ export function useCreateRun() {
 
   return useMutation({
     mutationFn: (payload: RunCreateRequest) => createRun(payload),
+    onSuccess: (run) => {
+      queryClient.setQueryData<RunRead>(["run", run.run_id], run);
+      queryClient.invalidateQueries({ queryKey: ["runs", run.user_id] });
+    },
+  });
+}
+
+export function useCreateShoppingRun() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (runId: string) => createShoppingRun(runId),
     onSuccess: (run) => {
       queryClient.setQueryData<RunRead>(["run", run.run_id], run);
       queryClient.invalidateQueries({ queryKey: ["runs", run.user_id] });

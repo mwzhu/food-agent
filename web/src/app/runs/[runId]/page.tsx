@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
+import { useState } from "react";
 
 import { GroceryList } from "@/components/grocery/grocery-list";
 import { MealCalendar } from "@/components/plan/meal-calendar";
@@ -10,16 +11,19 @@ import { RunProgress } from "@/components/run/run-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useRun, useRunTrace } from "@/hooks/use-run";
+import { useCreateShoppingRun, useRun, useRunTrace } from "@/hooks/use-run";
 import { useRunStream } from "@/hooks/use-run-stream";
 import { formatDateTime, formatLabel } from "@/lib/utils";
 
 export default function RunDetailPage() {
+  const router = useRouter();
   const params = useParams<{ runId: string }>();
   const runId = params.runId;
   const runQuery = useRun(runId, true);
   const traceQuery = useRunTrace(runId);
   const stream = useRunStream(runId);
+  const createShoppingRunMutation = useCreateShoppingRun();
+  const [shoppingErrorMessage, setShoppingErrorMessage] = useState<string | null>(null);
 
   if (runQuery.isLoading && !runQuery.data) {
     return (
@@ -50,6 +54,23 @@ export default function RunDetailPage() {
   const run = runQuery.data;
   const nutritionPlan = run.state_snapshot.nutrition_plan;
   const trace = traceQuery.data;
+  const canStartShopping =
+    run.status !== "running" &&
+    run.state_snapshot.selected_meals.length > 0 &&
+    run.state_snapshot.grocery_list.length === 0;
+
+  const startShopping = async () => {
+    setShoppingErrorMessage(null);
+
+    try {
+      const shoppingRun = await createShoppingRunMutation.mutateAsync(run.run_id);
+      router.push(`/runs/${shoppingRun.run_id}`);
+    } catch (error) {
+      setShoppingErrorMessage(
+        error instanceof Error ? error.message : "Could not start a shopping run from this meal plan.",
+      );
+    }
+  };
 
   return (
     <section className="space-y-6">
@@ -78,6 +99,9 @@ export default function RunDetailPage() {
               </Button>
             ) : null}
           </div>
+          {shoppingErrorMessage ? (
+            <p className="text-sm font-medium text-accent-foreground">{shoppingErrorMessage}</p>
+          ) : null}
         </CardHeader>
       </Card>
 
@@ -131,6 +155,34 @@ export default function RunDetailPage() {
                 <p className="text-sm text-muted-foreground">
                   The shopping phase will diff recipe ingredients against your saved fridge inventory before it renders
                   the grocery list here.
+                </p>
+              </CardContent>
+            </Card>
+          ) : canStartShopping ? (
+            <Card>
+              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Shopping</p>
+                  <CardTitle>Start shopping from the saved meal plan</CardTitle>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button asChild size="sm" variant="ghost">
+                    <Link href="/inventory">Edit fridge</Link>
+                  </Button>
+                  <Button
+                    disabled={createShoppingRunMutation.isPending}
+                    onClick={() => void startShopping()}
+                    size="sm"
+                    type="button"
+                  >
+                    {createShoppingRunMutation.isPending ? "Starting shopping..." : "Start shopping"}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  This run already has meals. Start a shopping-only follow-up run to build the grocery list even if the
+                  planning critic blocked the automatic handoff.
                 </p>
               </CardContent>
             </Card>

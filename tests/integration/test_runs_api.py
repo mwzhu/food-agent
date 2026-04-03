@@ -7,6 +7,8 @@ from fastapi.testclient import TestClient
 
 from shopper.config import Settings
 from shopper.main import create_app
+from shopper.models import PlanRun
+from shopper.schemas import PlannerStateSnapshot
 
 
 def _make_client(tmp_path: Path) -> TestClient:
@@ -30,6 +32,33 @@ def _wait_for_run_completion(client: TestClient, run_id: str, timeout_seconds: f
             return payload
         time.sleep(0.05)
     raise AssertionError(f"Run {run_id} did not complete within {timeout_seconds} seconds.")
+
+
+def _rewrite_run_for_manual_shopping(client: TestClient, run_id: str) -> None:
+    async def rewrite() -> None:
+        async with client.app.state.session_factory() as session:
+            plan_run = await session.get(PlanRun, run_id)
+            assert plan_run is not None
+            snapshot = PlannerStateSnapshot.model_validate(plan_run.state_snapshot)
+            snapshot = snapshot.model_copy(
+                update={
+                    "status": "failed",
+                    "grocery_list": [],
+                    "fridge_inventory": [],
+                    "current_node": "critic",
+                    "current_phase": "planning",
+                    "phase_statuses": snapshot.phase_statuses.model_copy(
+                        update={"planning": "failed", "shopping": "locked"}
+                    ),
+                }
+            )
+            plan_run.status = snapshot.status
+            plan_run.state_snapshot = snapshot.model_dump(mode="json")
+            await session.commit()
+
+    import asyncio
+
+    asyncio.run(rewrite())
 
 
 def test_post_run_completes_and_persists_state(tmp_path):
@@ -248,12 +277,57 @@ def test_full_run_builds_grocery_list_and_applies_full_and_partial_fridge_diff(t
         assert 0 < partial_item["shopping_quantity"] < partial_item["quantity"]
 
 
+def test_post_shopping_run_starts_from_existing_meal_plan(tmp_path):
+    client = _make_client(tmp_path)
+    payload = {
+        "user_id": "manual-shopping",
+        "profile": {
+            "age": 33,
+            "weight_lbs": 168,
+            "height_in": 69,
+            "sex": "male",
+            "activity_level": "lightly_active",
+            "goal": "maintain",
+            "dietary_restrictions": [],
+            "allergies": [],
+            "budget_weekly": 135,
+            "household_size": 2,
+            "cooking_skill": "intermediate",
+            "schedule_json": {"weeknight_dinner": "30m"},
+        },
+    }
+
+    with client:
+        source_response = client.post("/v1/runs", json=payload)
+        assert source_response.status_code == 201, source_response.text
+        source_run = _wait_for_run_completion(client, source_response.json()["run_id"])
+        assert source_run["state_snapshot"]["selected_meals"]
+
+        _rewrite_run_for_manual_shopping(client, source_run["run_id"])
+
+        shopping_response = client.post(f"/v1/runs/{source_run['run_id']}/shopping")
+        assert shopping_response.status_code == 201, shopping_response.text
+        shopping_run = shopping_response.json()
+        assert shopping_run["run_id"] != source_run["run_id"]
+        assert shopping_run["status"] == "running"
+        assert shopping_run["state_snapshot"]["current_phase"] == "shopping"
+        assert shopping_run["state_snapshot"]["phase_statuses"]["planning"] == "completed"
+        assert shopping_run["state_snapshot"]["phase_statuses"]["shopping"] == "running"
+        assert len(shopping_run["state_snapshot"]["selected_meals"]) == len(source_run["state_snapshot"]["selected_meals"])
+
+        completed_shopping_run = _wait_for_run_completion(client, shopping_run["run_id"])
+        assert completed_shopping_run["status"] == "completed"
+        assert completed_shopping_run["state_snapshot"]["phase_statuses"]["planning"] == "completed"
+        assert completed_shopping_run["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
+        assert completed_shopping_run["state_snapshot"]["grocery_list"]
+
+
 def test_resume_endpoint_is_explicitly_deferred_in_phase_one(tmp_path):
     client = _make_client(tmp_path)
     with client:
         response = client.post("/v1/runs/example-run/resume")
         assert response.status_code == 501, response.text
-        assert response.json()["detail"] == "Resume is not available in Phase 1."
+        assert response.json()["detail"] == "Resume is not available in Phase 3."
 
 
 def test_list_runs_and_trace_endpoint(tmp_path):
