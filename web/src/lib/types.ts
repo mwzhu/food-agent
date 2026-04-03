@@ -112,6 +112,13 @@ export interface CriticVerdict {
   issues: string[];
   warnings: string[];
   repair_instructions: string[];
+  findings: CriticFinding[];
+}
+
+export interface CriticFinding {
+  code: string;
+  severity: "issue" | "warning";
+  message: string;
 }
 
 export interface GroceryItem {

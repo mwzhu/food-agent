@@ -140,3 +140,74 @@ def test_context_assembler_includes_failed_plan_and_critic_feedback_for_replans(
         "Choose a dinner with tighter nutrition grounding."
     ]
     assert context.payload["replan_attempt"] == 1
+
+
+def test_context_assembler_builds_shopping_critic_context_with_fridge_and_traceability():
+    assembler = ContextAssembler(
+        memory_store=DummyMemoryStore(),
+        settings=Settings(
+            SHOPPER_APP_ENV="test",
+            SHOPPER_CONTEXT_TOKENIZER="cl100k_base",
+            LANGSMITH_TRACING=False,
+        ),
+    )
+    state = {
+        "user_profile": {
+            "age": 29,
+            "sex": "female",
+            "activity_level": "lightly_active",
+            "goal": "maintain",
+            "budget_weekly": 130,
+            "household_size": 2,
+            "cooking_skill": "intermediate",
+            "dietary_restrictions": [],
+            "allergies": [],
+            "schedule_json": {"weekday": "quick dinner"},
+        },
+        "selected_meals": [
+            {
+                "day": "monday",
+                "meal_type": "dinner",
+                "recipe_id": "sheet-pan-dinner",
+                "recipe_name": "Sheet Pan Dinner",
+                "cuisine": "american",
+                "prep_time_min": 25,
+                "serving_multiplier": 1.0,
+                "calories": 520,
+                "protein_g": 42,
+                "carbs_g": 48,
+                "fat_g": 12,
+                "tags": ["high-protein"],
+                "macro_fit_score": 0.91,
+                "recipe": None,
+            }
+        ],
+        "grocery_list": [
+            {
+                "name": "chicken breast",
+                "quantity": 5.0,
+                "unit": "oz",
+                "category": "meat",
+                "already_have": False,
+                "shopping_quantity": 5.0,
+                "quantity_in_fridge": 0.0,
+                "source_recipe_ids": ["sheet-pan-dinner"],
+            }
+        ],
+        "fridge_inventory": [
+            {
+                "item_id": 1,
+                "user_id": "user-1",
+                "name": "spinach",
+                "quantity": 2.0,
+                "unit": "cup",
+                "category": "produce",
+                "expiry_date": None,
+            }
+        ],
+    }
+
+    context = asyncio.run(assembler.build_context("shopping_critic", state))
+
+    assert context.payload["grocery_list"][0]["source_recipe_ids"] == ["sheet-pan-dinner"]
+    assert context.payload["fridge_inventory"][0]["name"] == "spinach"

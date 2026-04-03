@@ -10,7 +10,12 @@ from shopper.agents.events import EventEmitter, bind_event_emitter, emit_run_eve
 from shopper.agents.nodes import LoadMemoryNode
 from shopper.agents.replan import derive_replan_feedback
 from shopper.agents.state import PlannerState, PlanningSubgraphState, ShoppingSubgraphState
-from shopper.agents.subgraphs import build_critic_subgraph, build_planning_subgraph, build_shopping_subgraph
+from shopper.agents.subgraphs import (
+    build_planning_critic_subgraph,
+    build_planning_subgraph,
+    build_shopping_critic_subgraph,
+    build_shopping_subgraph,
+)
 from shopper.agents.supervisor import route_from_critic, route_from_supervisor, supervisor_node
 from shopper.agents.tools import RecipeSearchTool, build_get_fridge_contents_tool
 from shopper.config import Settings
@@ -78,9 +83,13 @@ def build_planner_graph(
         recipe_search=recipe_search,
         chat_model=chat_model,
     )
-    critic_subgraph = build_critic_subgraph(
+    planning_critic_subgraph = build_planning_critic_subgraph(
         context_assembler=context_assembler,
         recipe_store=recipe_store,
+        chat_model=chat_model,
+    )
+    shopping_critic_subgraph = build_shopping_critic_subgraph(
+        context_assembler=context_assembler,
         chat_model=chat_model,
     )
     shopping_subgraph = build_shopping_subgraph(
@@ -164,66 +173,80 @@ def build_planner_graph(
             "trace_metadata": state["trace_metadata"],
         }
 
-    async def critic_subgraph_node(state: Dict[str, Any]) -> Dict[str, Any]:
-        result = await critic_subgraph.ainvoke(state)
+    async def planning_critic_subgraph_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        result = await planning_critic_subgraph.ainvoke(state)
         verdict = result["critic_verdict"]
         passed = bool(verdict["passed"])
-        current_phase = state.get("current_phase", "planning")
-        assert current_phase in ("planning", "shopping")
         await emit_run_event(
             run_id=state["run_id"],
             event_type="phase_completed",
-            phase=current_phase,
+            phase="planning",
             node_name="critic",
-            message="{phase} phase {status} verification.".format(
-                phase=str(current_phase).title(),
-                status="passed" if passed else "failed",
-            ),
+            message="Planning phase {status} verification.".format(status="passed" if passed else "failed"),
             data={"passed": passed},
         )
-        if current_phase == "planning":
-            should_retry = (not passed) and state["replan_count"] < MAX_REPLAN_LOOPS
-            if not passed and not should_retry:
-                await emit_run_event(
-                    run_id=state["run_id"],
-                    event_type="run_completed",
-                    phase=current_phase,
-                    node_name="critic",
-                    message="Run failed.",
-                    data={"status": "failed"},
-                )
-            if passed:
-                next_phase_statuses = _phase_statuses("completed", "completed", "pending")
-                next_status = "running"
-            elif should_retry:
-                next_phase_statuses = _phase_statuses("completed", "running")
-                next_status = "running"
-            else:
-                next_phase_statuses = _phase_statuses("completed", "failed")
-                next_status = "failed"
-        else:
+        should_retry = (not passed) and state["replan_count"] < MAX_REPLAN_LOOPS
+        if not passed and not should_retry:
             await emit_run_event(
                 run_id=state["run_id"],
                 event_type="run_completed",
-                phase=current_phase,
+                phase="planning",
                 node_name="critic",
-                message="Run {status}.".format(status="completed" if passed else "failed"),
-                data={"status": "completed" if passed else "failed"},
+                message="Run failed.",
+                data={"status": "failed"},
             )
-            next_phase_statuses = _phase_statuses(
-                "completed",
-                "completed",
-                "completed" if passed else "failed",
-            )
-            next_status = "completed" if passed else "failed"
+        if passed:
+            next_phase_statuses = _phase_statuses("completed", "completed", "pending")
+            next_status = "running"
+        elif should_retry:
+            next_phase_statuses = _phase_statuses("completed", "running")
+            next_status = "running"
+        else:
+            next_phase_statuses = _phase_statuses("completed", "failed")
+            next_status = "failed"
         return {
             "critic_verdict": verdict,
             "repair_instructions": result.get("repair_instructions", []),
             "context_metadata": result.get("context_metadata", []),
             "status": next_status,
             "current_node": "critic",
-            "current_phase": current_phase,
+            "current_phase": "planning",
             "phase_statuses": next_phase_statuses,
+            "trace_metadata": state["trace_metadata"],
+        }
+
+    async def shopping_critic_subgraph_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        result = await shopping_critic_subgraph.ainvoke(state)
+        verdict = result["critic_verdict"]
+        passed = bool(verdict["passed"])
+        await emit_run_event(
+            run_id=state["run_id"],
+            event_type="phase_completed",
+            phase="shopping",
+            node_name="critic",
+            message="Shopping phase {status} verification.".format(status="passed" if passed else "failed"),
+            data={"passed": passed},
+        )
+        await emit_run_event(
+            run_id=state["run_id"],
+            event_type="run_completed",
+            phase="shopping",
+            node_name="critic",
+            message="Run {status}.".format(status="completed" if passed else "failed"),
+            data={"status": "completed" if passed else "failed"},
+        )
+        return {
+            "critic_verdict": verdict,
+            "repair_instructions": result.get("repair_instructions", []),
+            "context_metadata": result.get("context_metadata", []),
+            "status": "completed" if passed else "failed",
+            "current_node": "critic",
+            "current_phase": "shopping",
+            "phase_statuses": _phase_statuses(
+                "completed",
+                "completed",
+                "completed" if passed else "failed",
+            ),
             "trace_metadata": state["trace_metadata"],
         }
 
@@ -240,6 +263,7 @@ def build_planner_graph(
                 run_id=state["run_id"],
                 user_id=state["user_id"],
                 selected_meals=state["selected_meals"],
+                fridge_inventory=state.get("fridge_inventory", []),
                 context_metadata=[],
             )
         )
@@ -259,7 +283,8 @@ def build_planner_graph(
     graph.add_node("load_memory", load_memory_wrapper)
     graph.add_node("planning_subgraph", planning_subgraph_node)
     graph.add_node("shopping_subgraph", shopping_subgraph_node)
-    graph.add_node("critic_subgraph", critic_subgraph_node)
+    graph.add_node("planning_critic_subgraph", planning_critic_subgraph_node)
+    graph.add_node("shopping_critic_subgraph", shopping_critic_subgraph_node)
     graph.add_edge(START, "supervisor")
     graph.add_conditional_edges(
         "supervisor",
@@ -271,9 +296,9 @@ def build_planner_graph(
         },
     )
     graph.add_edge("load_memory", "planning_subgraph")
-    graph.add_edge("planning_subgraph", "critic_subgraph")
+    graph.add_edge("planning_subgraph", "planning_critic_subgraph")
     graph.add_conditional_edges(
-        "critic_subgraph",
+        "planning_critic_subgraph",
         lambda state: route_from_critic(state, max_replans=MAX_REPLAN_LOOPS),
         {
             "planning_subgraph": "planning_subgraph",
@@ -281,7 +306,8 @@ def build_planner_graph(
             "end": END,
         },
     )
-    graph.add_edge("shopping_subgraph", "critic_subgraph")
+    graph.add_edge("shopping_subgraph", "shopping_critic_subgraph")
+    graph.add_edge("shopping_critic_subgraph", END)
     return graph.compile()
 
 

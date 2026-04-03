@@ -3,21 +3,39 @@ from __future__ import annotations
 import json
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 from uuid import uuid4
 
 from shopper.agents import invoke_planner_graph
 from shopper.config import Settings
+from shopper.evaluation.evaluators.daily_macro_alignment import DailyMacroAlignmentEvaluator
 from shopper.evaluation.evaluators.groundedness import GroundednessEvaluator
+from shopper.evaluation.evaluators.grocery_aggregation import GroceryAggregationEvaluator
+from shopper.evaluation.evaluators.grocery_category import GroceryCategoryEvaluator
 from shopper.evaluation.evaluators.grocery_completeness import GroceryCompletenessEvaluator
+from shopper.evaluation.evaluators.grocery_fridge_diff import GroceryFridgeDiffEvaluator
+from shopper.evaluation.evaluators.grocery_traceability import GroceryTraceabilityEvaluator
 from shopper.evaluation.evaluators.meal_relevance import MealRelevanceEvaluator
 from shopper.evaluation.evaluators.nutrition_accuracy import NutritionAccuracyEvaluator
 from shopper.evaluation.evaluators.safety import SafetyEvaluator
 from shopper.schemas import FridgeItemSnapshot, GroceryItem, MealSlot, NutritionPlan, PlannerStateSnapshot
-from shopper.services import aggregate_quantities, categorize, diff_against_fridge, extract_ingredients
 
 
 DATASET_DIR = Path(__file__).resolve().parent / "datasets"
+SHOPPING_EVAL_PROFILE = {
+    "age": 30,
+    "weight_lbs": 170,
+    "height_in": 68,
+    "sex": "female",
+    "activity_level": "lightly_active",
+    "goal": "maintain",
+    "dietary_restrictions": [],
+    "allergies": [],
+    "budget_weekly": 140,
+    "household_size": 1,
+    "cooking_skill": "intermediate",
+    "schedule_json": {"weeknight_dinner": "30m"},
+}
 
 
 class EvaluationRunner:
@@ -26,18 +44,33 @@ class EvaluationRunner:
         self.settings = settings
         self.recipe_store = recipe_store
         self.nutrition_evaluator = NutritionAccuracyEvaluator()
+        self.daily_macro_alignment_evaluator = DailyMacroAlignmentEvaluator()
         self.meal_relevance_evaluator = MealRelevanceEvaluator()
         self.safety_evaluator = SafetyEvaluator()
         self.groundedness_evaluator = GroundednessEvaluator()
         self.grocery_evaluator = GroceryCompletenessEvaluator()
+        self.grocery_aggregation_evaluator = GroceryAggregationEvaluator()
+        self.grocery_category_evaluator = GroceryCategoryEvaluator()
+        self.grocery_fridge_diff_evaluator = GroceryFridgeDiffEvaluator()
+        self.grocery_traceability_evaluator = GroceryTraceabilityEvaluator()
 
     async def run(self, eval_name: str) -> Dict[str, Any]:
-        if eval_name == "grocery_completeness":
+        if eval_name == "grocery_category":
+            cases = self._load_cases("grocery_category_cases.json")
+            return self._run_grocery_category_eval(cases)
+
+        if eval_name in {
+            "grocery_completeness",
+            "grocery_aggregation",
+            "grocery_fridge_diff",
+            "grocery_traceability",
+        }:
             cases = self._load_cases("grocery_cases.json")
-            return self._run_grocery_eval(cases)
+            return await self._run_grocery_eval(cases, eval_name)
 
         dataset_name = {
             "nutrition": "nutrition_cases.json",
+            "daily_macro_alignment": "meal_plan_cases.json",
             "meal_relevance": "meal_plan_cases.json",
             "safety": "safety_cases.json",
             "groundedness": "meal_plan_cases.json",
@@ -73,23 +106,10 @@ class EvaluationRunner:
             "results": results,
         }
 
-    def _load_cases(self, dataset_name: str) -> list[dict[str, Any]]:
-        cases = json.loads((DATASET_DIR / dataset_name).read_text(encoding="utf-8"))
-        assert isinstance(cases, list)
-        return cases
-
-    def _run_grocery_eval(self, cases: list[dict[str, Any]]) -> dict[str, Any]:
+    def _run_grocery_category_eval(self, cases: list[dict[str, Any]]) -> dict[str, Any]:
         results = []
         for case in cases:
-            meals = self._build_case_meals(case)
-            fridge_inventory = self._build_case_fridge_inventory(case)
-            grocery_list = categorize(
-                diff_against_fridge(
-                    aggregate_quantities(extract_ingredients(meals)),
-                    fridge_inventory,
-                )
-            )
-            evaluation = self.grocery_evaluator.evaluate(case, meals, grocery_list)
+            evaluation = self.grocery_category_evaluator.evaluate(case)
             results.append(
                 {
                     "case_id": case["case_id"],
@@ -101,19 +121,72 @@ class EvaluationRunner:
                         "trace_id": None,
                         "source": "eval",
                     },
-                    "nutrition_plan": None,
-                    "selected_meals": [meal.model_dump(mode="json") for meal in meals],
-                    "grocery_list": [item.model_dump(mode="json") for item in grocery_list],
-                    "meal_plan": case["meal_plan"],
-                    "fridge_inventory": case["fridge_inventory"],
+                    "name": case["name"],
+                    "expected_category": case["expected_category"],
                     **{key: value for key, value in evaluation.items() if key not in {"passed", "issues"}},
                 }
             )
 
         passed = all(result["passed"] for result in results)
-        upload = self._maybe_upload_results("grocery_completeness", results)
+        upload = self._maybe_upload_results("grocery_category", results)
         return {
-            "eval_name": "grocery_completeness",
+            "eval_name": "grocery_category",
+            "passed": passed,
+            "num_cases": len(results),
+            "pass_rate": round(sum(1 for result in results if result["passed"]) / float(len(results)), 4),
+            "langsmith_upload": upload,
+            "results": results,
+        }
+
+    def _load_cases(self, dataset_name: str) -> list[dict[str, Any]]:
+        cases = json.loads((DATASET_DIR / dataset_name).read_text(encoding="utf-8"))
+        assert isinstance(cases, list)
+        return cases
+
+    async def _run_grocery_eval(self, cases: list[dict[str, Any]], eval_name: str) -> dict[str, Any]:
+        results = []
+        for case in cases:
+            meals = self._build_case_meals(case)
+            fridge_inventory = self._build_case_fridge_inventory(case)
+            initial_state = self._build_shopping_eval_state(case["case_id"], meals, fridge_inventory)
+            graph_result = await invoke_planner_graph(self.graph, initial_state, self.settings, source="eval")
+            grocery_list = [GroceryItem.model_validate(item) for item in graph_result["grocery_list"]]
+            evaluation = self._evaluate_shopping_case(eval_name, case, meals, grocery_list, fridge_inventory)
+            critic_verdict = graph_result["critic_verdict"]
+            if not critic_verdict["passed"]:
+                evaluation = {
+                    **evaluation,
+                    "passed": False,
+                    "issues": sorted(
+                        set(
+                            list(evaluation["issues"])
+                            + [
+                                "Shopping critic failed: {issue}".format(issue=issue)
+                                for issue in critic_verdict["issues"]
+                            ]
+                        )
+                    ),
+                }
+            results.append(
+                {
+                    "case_id": case["case_id"],
+                    "passed": evaluation["passed"],
+                    "issues": evaluation["issues"],
+                    "trace_metadata": graph_result.get("trace_metadata", {}),
+                    "nutrition_plan": graph_result.get("nutrition_plan"),
+                    "selected_meals": [meal.model_dump(mode="json") for meal in meals],
+                    "grocery_list": [item.model_dump(mode="json") for item in grocery_list],
+                    "meal_plan": case["meal_plan"],
+                    "fridge_inventory": case["fridge_inventory"],
+                    "critic_verdict": graph_result.get("critic_verdict"),
+                    **{key: value for key, value in evaluation.items() if key not in {"passed", "issues"}},
+                }
+            )
+
+        passed = all(result["passed"] for result in results)
+        upload = self._maybe_upload_results(eval_name, results)
+        return {
+            "eval_name": eval_name,
             "passed": passed,
             "num_cases": len(results),
             "pass_rate": round(sum(1 for result in results if result["passed"]) / float(len(results)), 4),
@@ -127,6 +200,31 @@ class EvaluationRunner:
             user_id=case["case_id"],
             user_profile=case["profile"],
         ).model_dump(mode="json")
+
+    def _build_shopping_eval_state(
+        self,
+        case_id: str,
+        meals: list[MealSlot],
+        fridge_inventory: list[FridgeItemSnapshot],
+    ) -> dict[str, Any]:
+        snapshot = PlannerStateSnapshot.starting(
+            run_id="eval-{case_id}".format(case_id=case_id),
+            user_id=case_id,
+            user_profile=SHOPPING_EVAL_PROFILE,
+        )
+        snapshot = snapshot.model_copy(
+            update={
+                "selected_meals": meals,
+                "fridge_inventory": fridge_inventory,
+                "status": "running",
+                "current_node": "supervisor",
+                "current_phase": "shopping",
+                "phase_statuses": snapshot.phase_statuses.model_copy(
+                    update={"memory": "completed", "planning": "completed", "shopping": "running", "checkout": "locked"}
+                ),
+            }
+        )
+        return snapshot.model_dump(mode="json")
 
     def _build_case_meals(self, case: dict[str, Any]) -> list[MealSlot]:
         meals: list[MealSlot] = []
@@ -175,12 +273,32 @@ class EvaluationRunner:
 
         if eval_name == "nutrition":
             return self.nutrition_evaluator.evaluate(case, plan)
+        if eval_name == "daily_macro_alignment":
+            return self.daily_macro_alignment_evaluator.evaluate(case, plan, meals)
         if eval_name == "meal_relevance":
             return self.meal_relevance_evaluator.evaluate(case, meals, self.recipe_store.get_recipe)
         if eval_name == "safety":
             return self.safety_evaluator.evaluate(case, meals)
         if eval_name == "groundedness":
             return self.groundedness_evaluator.evaluate(case, meals, self.recipe_store.get_recipe)
+        raise AssertionError(eval_name)
+
+    def _evaluate_shopping_case(
+        self,
+        eval_name: str,
+        case: dict[str, Any],
+        meals: list[MealSlot],
+        grocery_list: list[GroceryItem],
+        fridge_inventory: list[FridgeItemSnapshot],
+    ) -> dict[str, Any]:
+        if eval_name == "grocery_completeness":
+            return self.grocery_evaluator.evaluate(case, meals, grocery_list)
+        if eval_name == "grocery_aggregation":
+            return self.grocery_aggregation_evaluator.evaluate(case, meals, grocery_list)
+        if eval_name == "grocery_fridge_diff":
+            return self.grocery_fridge_diff_evaluator.evaluate(case, meals, grocery_list, fridge_inventory)
+        if eval_name == "grocery_traceability":
+            return self.grocery_traceability_evaluator.evaluate(case, meals, grocery_list)
         raise AssertionError(eval_name)
 
     def _maybe_upload_results(self, eval_name: str, results: List[Dict[str, Any]]) -> Dict[str, Any]:

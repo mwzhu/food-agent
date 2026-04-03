@@ -43,6 +43,7 @@ class CriticVerdictState(TypedDict):
     issues: List[str]
     warnings: List[str]
     repair_instructions: List[str]
+    findings: List[Dict[str, Any]]
 
 
 class GroceryItemState(TypedDict):

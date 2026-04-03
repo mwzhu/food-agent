@@ -24,7 +24,11 @@ async def main() -> int:
     parser.add_argument(
         "--eval",
         required=True,
-        help="Single eval name or a comma-separated list: nutrition,meal_relevance,safety,groundedness,grocery_completeness",
+        help=(
+            "Single eval name or a comma-separated list: "
+            "nutrition,daily_macro_alignment,meal_relevance,safety,groundedness,"
+            "grocery_completeness,grocery_aggregation,grocery_fridge_diff,grocery_traceability,grocery_category"
+        ),
     )
     args = parser.parse_args()
 

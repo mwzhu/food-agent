@@ -6,72 +6,95 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
-from pydantic import BaseModel, Field
 
 from shopper.agents.events import emit_run_event
 from shopper.agents.llm import invoke_structured
+from shopper.agents.nodes.critic_common import CriticAssessment, build_findings, dedupe_findings, dedupe_strings
 from shopper.memory import ContextAssembler
 from shopper.retrieval import QdrantRecipeStore
-from shopper.schemas import ContextMetadata, CriticVerdict, GroceryItem, MealSlot, NutritionPlan
-from shopper.validators import validate_grocery_list, validate_meal_plan_safety, validate_nutrition_plan
+from shopper.schemas import ContextMetadata, CriticFinding, CriticVerdict, MealSlot, NutritionPlan
+from shopper.validators import (
+    validate_daily_macro_alignment,
+    validate_meal_plan_safety,
+    validate_meal_plan_schedule_fit,
+    validate_meal_plan_slot_coverage,
+    validate_nutrition_plan,
+)
 
 
-PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "critic.md"
-
-
-class CriticAssessment(BaseModel):
-    passed: bool = True
-    issues: List[str] = Field(default_factory=list)
-    warnings: List[str] = Field(default_factory=list)
-    repair_instructions: List[str] = Field(default_factory=list)
+PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "planning_critic.md"
 
 
 @dataclass
-class CriticNode:
+class PlanningCriticNode:
     context_assembler: ContextAssembler
     recipe_store: QdrantRecipeStore
     chat_model: Optional[Any] = None
 
     async def __call__(self, state: Dict[str, Any]) -> Dict[str, Any]:
-        phase = state.get("current_phase", "planning")
         await emit_run_event(
             run_id=state["run_id"],
             event_type="node_entered",
-            phase=phase,
+            phase="planning",
             node_name="critic",
-            message=(
-                "Reviewing nutrition, safety, and recipe groundedness."
-                if phase == "planning"
-                else "Reviewing grocery completeness against the approved meal plan."
-            ),
+            message="Reviewing plan coverage, macro alignment, safety, and groundedness.",
         )
 
-        context = await self.context_assembler.build_context("critic", state)
+        context = await self.context_assembler.build_context("planning_critic", state)
         nutrition_plan = NutritionPlan.model_validate(state["nutrition_plan"])
         meals = [MealSlot.model_validate(item) for item in state["selected_meals"]]
-        grocery_list = [GroceryItem.model_validate(item) for item in state.get("grocery_list", [])]
-        nutrition_plan_issues = validate_nutrition_plan(nutrition_plan)
         user_profile = state["user_profile"]
-        safety_issues = validate_meal_plan_safety(meals, user_profile["allergies"])
-        groundedness_issues = self._groundedness_issues(meals)
-        grocery_issues = validate_grocery_list(meals, grocery_list) if phase == "shopping" else []
-        llm_assessment = await self._llm_review(context.payload, nutrition_plan, meals)
-        warnings = self._dedupe(self._variety_warnings(meals) + (llm_assessment.warnings if llm_assessment else []))
-        issues = self._dedupe(
-            nutrition_plan_issues
-            + safety_issues
-            + groundedness_issues
-            + grocery_issues
-            + (llm_assessment.issues if llm_assessment else [])
+
+        findings = dedupe_findings(
+            [
+                *build_findings("P_PLAN_INVALID", validate_nutrition_plan(nutrition_plan), severity="issue"),
+                *build_findings("P_SLOT_COVERAGE", validate_meal_plan_slot_coverage(meals), severity="issue"),
+                *build_findings(
+                    "P_MACRO_MISS",
+                    validate_daily_macro_alignment(nutrition_plan, meals, "critic_blockers"),
+                    severity="issue",
+                ),
+                *build_findings(
+                    "P_MACRO_DRIFT",
+                    validate_daily_macro_alignment(nutrition_plan, meals, "critic_warnings"),
+                    severity="warning",
+                ),
+                *build_findings(
+                    "P_SAFETY",
+                    validate_meal_plan_safety(meals, user_profile["allergies"]),
+                    severity="issue",
+                ),
+                *build_findings("P_GROUNDEDNESS", self._groundedness_issues(meals), severity="issue"),
+                *build_findings(
+                    "P_SCHEDULE",
+                    validate_meal_plan_schedule_fit(meals, user_profile["schedule_json"]),
+                    severity="issue",
+                ),
+                *build_findings("P_VARIETY", self._variety_warnings(meals), severity="warning"),
+            ]
         )
+
+        llm_assessment = await self._llm_review(context.payload, nutrition_plan, meals)
+        if llm_assessment is not None:
+            findings = dedupe_findings(
+                [
+                    *findings,
+                    *build_findings("P_LLM_REVIEW", llm_assessment.issues, severity="issue"),
+                    *build_findings("P_LLM_REVIEW", llm_assessment.warnings, severity="warning"),
+                ]
+            )
+
+        issues = [finding.message for finding in findings if finding.severity == "issue"]
+        warnings = [finding.message for finding in findings if finding.severity == "warning"]
         verdict = CriticVerdict(
             passed=not issues and (llm_assessment.passed if llm_assessment is not None else True),
             issues=issues,
             warnings=warnings,
-            repair_instructions=self._dedupe(
-                self._repair_instructions(issues)
+            repair_instructions=dedupe_strings(
+                self._repair_instructions(findings)
                 + (llm_assessment.repair_instructions if llm_assessment is not None else [])
             ),
+            findings=findings,
         )
         metadata = ContextMetadata(
             node_name="critic",
@@ -85,14 +108,18 @@ class CriticNode:
         await emit_run_event(
             run_id=state["run_id"],
             event_type="node_completed",
-            phase=phase,
+            phase="planning",
             node_name="critic",
-            message="{phase} critic {result} with {issue_count} blocking issues.".format(
-                phase=str(phase).title(),
+            message="Planning critic {result} with {issue_count} blocking issues.".format(
                 result="passed" if verdict.passed else "failed",
                 issue_count=len(verdict.issues),
             ),
-            data={"passed": verdict.passed, "issues": verdict.issues, "warnings": verdict.warnings},
+            data={
+                "passed": verdict.passed,
+                "issues": verdict.issues,
+                "warnings": verdict.warnings,
+                "finding_codes": [finding.code for finding in verdict.findings],
+            },
         )
 
         return {
@@ -101,7 +128,7 @@ class CriticNode:
             "context_metadata": [metadata.model_dump(mode="json")],
             "messages": [
                 AIMessage(
-                    content="Critic review complete with {mode}.".format(
+                    content="Planning critic review complete with {mode}.".format(
                         mode="LLM support" if llm_assessment is not None else "deterministic fallback"
                     )
                 )
@@ -182,10 +209,14 @@ class CriticNode:
     def _variety_warnings(self, meals: List[MealSlot]) -> List[str]:
         warnings: List[str] = []
         seen_by_day: Dict[str, List[str]] = {}
+        recent_recipe_ids: Dict[str, List[str]] = {}
         for meal in meals:
             recent_cuisines = []
+            recent_recipes = []
             for cuisines in list(seen_by_day.values())[-2:]:
                 recent_cuisines.extend(cuisines)
+            for recipe_ids in list(recent_recipe_ids.values())[-2:]:
+                recent_recipes.extend(recipe_ids)
             if meal.cuisine and meal.cuisine in recent_cuisines:
                 warnings.append(
                     "Cuisine repeat detected for {cuisine} around {day}.".format(
@@ -193,23 +224,30 @@ class CriticNode:
                         day=meal.day,
                     )
                 )
+            if meal.recipe_id in recent_recipes:
+                warnings.append(
+                    "Recipe repeat detected for {recipe_id} around {day}.".format(
+                        recipe_id=meal.recipe_id,
+                        day=meal.day,
+                    )
+                )
             seen_by_day.setdefault(meal.day, []).append(meal.cuisine)
-        return self._dedupe(warnings)
+            recent_recipe_ids.setdefault(meal.day, []).append(meal.recipe_id)
+        return dedupe_strings(warnings)
 
-    def _repair_instructions(self, issues: List[str]) -> List[str]:
+    def _repair_instructions(self, findings: List[CriticFinding]) -> List[str]:
+        codes = {finding.code for finding in findings if finding.severity == "issue"}
         instructions: List[str] = []
-        lowered_issues = [issue.lower() for issue in issues]
-        if any("allergen" in issue for issue in lowered_issues):
+        if "P_SLOT_COVERAGE" in codes:
+            instructions.append("Fill every missing meal slot exactly once before handing off to shopping.")
+        if "P_SAFETY" in codes:
             instructions.append("Replace any meal containing a flagged allergen before finalizing the plan.")
-        if any("missing from the retrieval store" in issue for issue in lowered_issues):
-            instructions.append("Select only recipes that resolve from the recipe store.")
-        if any("nutrition" in issue or "macro" in issue for issue in lowered_issues):
-            instructions.append("Rebalance meal portions so macro totals stay consistent with the nutrition plan.")
-        if any("prep" in issue or "schedule" in issue for issue in lowered_issues):
-            instructions.append("Match prep times to the user's weekday and weekend schedule constraints.")
-        if any("repeat" in issue or "variety" in issue or "cuisine" in issue for issue in lowered_issues):
-            instructions.append("Increase variety across adjacent days and avoid recently repeated cuisines.")
+        if "P_GROUNDEDNESS" in codes:
+            instructions.append("Select only recipes that resolve from the recipe store and keep nutrition grounded to recipe evidence.")
+        if "P_MACRO_MISS" in codes or "P_PLAN_INVALID" in codes:
+            instructions.append("Rebalance the affected days so the selected meals match the daily calorie and macro targets.")
+        if "P_SCHEDULE" in codes:
+            instructions.append("Swap meals that exceed weekday or weekend prep limits for faster alternatives.")
+        if "P_VARIETY" in {finding.code for finding in findings}:
+            instructions.append("Increase variety across adjacent days and avoid repeating the same cuisine or recipe too tightly.")
         return instructions
-
-    def _dedupe(self, values: List[str]) -> List[str]:
-        return list(dict.fromkeys(value for value in values if value))

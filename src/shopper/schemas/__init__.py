@@ -1,5 +1,6 @@
 from shopper.schemas.common import (
     ContextMetadata,
+    CriticFinding,
     CriticVerdict,
     MealSlot,
     MealType,
@@ -29,6 +30,7 @@ from shopper.schemas.user import UserProfileBase, UserProfileCreate, UserProfile
 
 __all__ = [
     "ContextMetadata",
+    "CriticFinding",
     "CriticVerdict",
     "FridgeItemCreate",
     "FridgeItemRead",

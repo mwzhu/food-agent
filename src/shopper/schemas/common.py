@@ -83,11 +83,18 @@ class MealSlot(BaseModel):
     recipe: Optional[RecipeRecord] = None
 
 
+class CriticFinding(BaseModel):
+    code: str
+    severity: Literal["issue", "warning"]
+    message: str
+
+
 class CriticVerdict(BaseModel):
     passed: bool
     issues: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list)
     repair_instructions: List[str] = Field(default_factory=list)
+    findings: List[CriticFinding] = Field(default_factory=list)
 
 
 class RunEvent(BaseModel):

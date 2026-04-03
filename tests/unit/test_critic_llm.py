@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 
-from shopper.agents.nodes.critic import CriticNode
+from shopper.agents.nodes.planning_critic import PlanningCriticNode
 from shopper.memory import AssembledContext, ContextBudget
 from shopper.schemas import MealSlot, NutritionPlan, RecipeIngredient, RecipeRecord
 
@@ -131,7 +131,7 @@ def test_critic_includes_llm_review_findings():
             "repair_instructions": ["Swap one lunch for a distinct cuisine with similar macros."],
         }
     )
-    node = CriticNode(
+    node = PlanningCriticNode(
         context_assembler=FakeContextAssembler(),
         recipe_store=FakeRecipeStore([recipe]),
         chat_model=chat_model,
@@ -144,6 +144,7 @@ def test_critic_includes_llm_review_findings():
     assert "Weekday lunches still look a little too repetitive." in verdict["issues"]
     assert "Cuisine palette leans heavily on one profile." in verdict["warnings"]
     assert "Swap one lunch for a distinct cuisine with similar macros." in verdict["repair_instructions"]
+    assert any(finding["code"] == "P_LLM_REVIEW" for finding in verdict["findings"])
     assert chat_model.calls, "Expected the critic to invoke the chat model."
 
 
@@ -174,7 +175,7 @@ def test_critic_hard_blockers_override_llm_pass():
             "repair_instructions": [],
         }
     )
-    node = CriticNode(
+    node = PlanningCriticNode(
         context_assembler=FakeContextAssembler(),
         recipe_store=FakeRecipeStore([recipe]),
         chat_model=chat_model,
@@ -185,3 +186,4 @@ def test_critic_hard_blockers_override_llm_pass():
     verdict = result["critic_verdict"]
     assert verdict["passed"] is False
     assert any("drifted too far from the recipe source nutrition" in issue for issue in verdict["issues"])
+    assert any(finding["code"] == "P_GROUNDEDNESS" for finding in verdict["findings"])
