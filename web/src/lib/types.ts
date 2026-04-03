@@ -8,6 +8,7 @@ export type ActivityLevel =
 export type Goal = "cut" | "maintain" | "bulk";
 export type CookingSkill = "beginner" | "intermediate" | "advanced";
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
+export type InventoryCategory = "produce" | "dairy" | "meat" | "pantry" | "frozen";
 export type RunEventType =
   | "phase_started"
   | "phase_completed"
@@ -113,6 +114,39 @@ export interface CriticVerdict {
   repair_instructions: string[];
 }
 
+export interface GroceryItem {
+  name: string;
+  quantity: number;
+  unit: string | null;
+  category: InventoryCategory;
+  already_have: boolean;
+  shopping_quantity: number;
+  quantity_in_fridge: number;
+  source_recipe_ids: string[];
+}
+
+export interface FridgeItemBase {
+  name: string;
+  quantity: number;
+  unit: string | null;
+  category: InventoryCategory;
+  expiry_date: string | null;
+}
+
+export interface FridgeItemCreate extends FridgeItemBase {}
+
+export type FridgeItemUpdate = Partial<FridgeItemBase>;
+
+export interface FridgeItemSnapshot extends FridgeItemBase {
+  item_id: number;
+  user_id: string;
+}
+
+export interface FridgeItemRead extends FridgeItemSnapshot {
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ContextMetadata {
   node_name: string;
   tokens_used: number;
@@ -198,6 +232,8 @@ export interface PlannerStateSnapshot {
   user_profile: UserProfileBase;
   nutrition_plan: NutritionPlan | null;
   selected_meals: MealSlot[];
+  grocery_list: GroceryItem[];
+  fridge_inventory: FridgeItemSnapshot[];
   user_preferences_learned: PreferenceSummary;
   retrieved_memories: MemorySnapshot[];
   critic_verdict: CriticVerdict | null;

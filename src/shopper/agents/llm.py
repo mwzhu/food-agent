@@ -20,7 +20,7 @@ def build_chat_model(settings: Settings) -> Optional[BaseChatModel]:
         except ImportError:
             return None
         return ChatOpenAI(
-            model=settings.llm_model,
+            model=settings.resolved_llm_model,
             temperature=settings.llm_temperature,
             api_key=settings.openai_api_key,
         )
@@ -33,7 +33,7 @@ def build_chat_model(settings: Settings) -> Optional[BaseChatModel]:
         except ImportError:
             return None
         return ChatAnthropic(
-            model=settings.llm_model,
+            model=settings.resolved_llm_model,
             temperature=settings.llm_temperature,
             api_key=settings.anthropic_api_key,
         )

@@ -1,18 +1,21 @@
 aiosqlite>=0.20.0
+alembic>=1.14.0
+asyncpg>=0.30.0
 fastapi<1.0.0,>=0.128.0
 httpx>=0.28.0
+langchain-anthropic>=0.3.0
 langchain-core>=0.3.0
+langchain-openai>=0.3.0
 langgraph>=0.2.0
 langsmith>=0.3.0
 pydantic<3.0.0,>=2.12.0
 pydantic-settings>=2.8.0
-qdrant-client>=1.12.0
+qdrant-client>=1.16.0
+python-dotenv>=1.0.0
+sentence-transformers>=3.0.0
 sqlalchemy<3.0.0,>=2.0.0
+tiktoken>=0.9.0
 uvicorn>=0.30.0
-
-[browser]
-browser-use>=0.3.0
-playwright>=1.52.0
 
 [dev]
 pytest>=8.0.0

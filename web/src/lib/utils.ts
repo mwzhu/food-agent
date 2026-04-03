@@ -1,7 +1,13 @@
 import { type ClassValue, clsx } from "clsx";
 import { twMerge } from "tailwind-merge";
 
-import type { MealSlot, UserProfileBase, UserProfileRead } from "@/lib/types";
+import type {
+  FridgeItemRead,
+  GroceryItem,
+  MealSlot,
+  UserProfileBase,
+  UserProfileRead,
+} from "@/lib/types";
 
 const DAY_ORDER = [
   "monday",
@@ -43,6 +49,14 @@ export function formatDateTime(value: string): string {
   }).format(new Date(value));
 }
 
+export function formatDate(value: string): string {
+  const date = parseDateValue(value);
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(date);
+}
+
 export function formatDuration(milliseconds: number): string {
   const totalSeconds = Math.max(0, Math.round(milliseconds / 1000));
   const minutes = Math.floor(totalSeconds / 60);
@@ -55,6 +69,10 @@ export function formatDuration(milliseconds: number): string {
 
 export function formatPercent(value: number): string {
   return `${Math.round(value * 100)}%`;
+}
+
+export function formatQuantity(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(2).replace(/\.?0+$/, "");
 }
 
 export function splitListInput(value: string): string[] {
@@ -92,6 +110,38 @@ export function groupMealsByDay(meals: MealSlot[]): Array<{ day: string; meals: 
       (left, right) => MEAL_ORDER.indexOf(left.meal_type) - MEAL_ORDER.indexOf(right.meal_type),
     ),
   }));
+}
+
+export function groupGroceryItemsByCategory(items: GroceryItem[]): Array<{ category: GroceryItem["category"]; items: GroceryItem[] }> {
+  const categoryOrder: GroceryItem["category"][] = ["produce", "dairy", "meat", "pantry", "frozen"];
+  return categoryOrder.map((category) => ({
+    category,
+    items: items.filter((item) => item.category === category),
+  }));
+}
+
+export function inventoryExpiryTone(item: FridgeItemRead): "default" | "warning" | "danger" {
+  if (!item.expiry_date) {
+    return "default";
+  }
+  const expiry = parseDateValue(item.expiry_date);
+  const now = new Date();
+  const daysUntilExpiry = Math.ceil((expiry.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+  if (daysUntilExpiry < 0) {
+    return "danger";
+  }
+  if (daysUntilExpiry <= 3) {
+    return "warning";
+  }
+  return "default";
+}
+
+function parseDateValue(value: string): Date {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [year, month, day] = value.split("-").map(Number);
+    return new Date(year, month - 1, day);
+  }
+  return new Date(value);
 }
 
 export function scheduleValue(

@@ -18,7 +18,7 @@ const manrope = Manrope({
 
 export const metadata: Metadata = {
   title: "Shopper",
-  description: "Phase 2 frontend for the AI meal planner and grocery shopping agent.",
+  description: "Phase 3 frontend for the AI meal planner and grocery shopping agent.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

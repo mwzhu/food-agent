@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useParams } from "next/navigation";
 
+import { GroceryList } from "@/components/grocery/grocery-list";
 import { MealCalendar } from "@/components/plan/meal-calendar";
 import { NutritionSummary } from "@/components/plan/nutrition-summary";
 import { RunProgress } from "@/components/run/run-progress";
@@ -15,12 +16,12 @@ import { formatDateTime, formatLabel } from "@/lib/utils";
 
 export default function RunDetailPage() {
   const params = useParams<{ runId: string }>();
-  const runId = typeof params.runId === "string" ? params.runId : null;
-  const runQuery = useRun(runId, false);
+  const runId = params.runId;
+  const runQuery = useRun(runId, true);
   const traceQuery = useRunTrace(runId);
   const stream = useRunStream(runId);
 
-  if (!runId || (runQuery.isLoading && !runQuery.data)) {
+  if (runQuery.isLoading && !runQuery.data) {
     return (
       <section className="grid min-h-[220px] place-items-center rounded-[1.75rem] border border-border bg-card/90 p-8 shadow-soft">
         <p className="text-muted-foreground">Loading run details...</p>
@@ -60,7 +61,7 @@ export default function RunDetailPage() {
           <CardTitle className="text-4xl md:text-5xl">Planning run {run.run_id.slice(0, 8)}</CardTitle>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground">
             Created {formatDateTime(run.created_at)} for {run.user_id}. The state below is the
-            live Phase 2 artifact returned by the backend worker and streaming layer.
+            live Phase 3 artifact returned by the backend worker and streaming layer.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Badge variant={run.status === "completed" ? "success" : run.status === "failed" ? "outline" : "default"}>
@@ -101,6 +102,35 @@ export default function RunDetailPage() {
               <CardContent>
                 <p className="text-sm text-muted-foreground">
                   Recipes will appear here as soon as planning finishes and the critic passes.
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {run.state_snapshot.grocery_list.length ? (
+            <div className="space-y-3">
+              <div className="flex justify-end">
+                <Button asChild size="sm" variant="ghost">
+                  <Link href="/inventory">Edit fridge</Link>
+                </Button>
+              </div>
+              <GroceryList items={run.state_snapshot.grocery_list} />
+            </div>
+          ) : run.state_snapshot.phase_statuses.shopping === "running" || run.status === "running" ? (
+            <Card>
+              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                <div>
+                  <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Shopping</p>
+                  <CardTitle>Waiting for the grocery build</CardTitle>
+                </div>
+                <Button asChild size="sm" variant="ghost">
+                  <Link href="/inventory">Edit fridge</Link>
+                </Button>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  The shopping phase will diff recipe ingredients against your saved fridge inventory before it renders
+                  the grocery list here.
                 </p>
               </CardContent>
             </Card>

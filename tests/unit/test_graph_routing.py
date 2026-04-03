@@ -12,6 +12,18 @@ def test_supervisor_routes_replans_back_to_planning():
 
 
 def test_critic_routes_failed_verdicts_back_to_planning_until_limit():
-    assert route_from_critic({"critic_verdict": {"passed": False}, "replan_count": 0}, max_replans=3) == "planning_subgraph"
-    assert route_from_critic({"critic_verdict": {"passed": False}, "replan_count": 3}, max_replans=3) == "end"
-    assert route_from_critic({"critic_verdict": {"passed": True}, "replan_count": 1}, max_replans=3) == "end"
+    assert route_from_critic({"critic_verdict": {"passed": False}, "replan_count": 0}, max_replans=1) == "planning_subgraph"
+    assert route_from_critic({"critic_verdict": {"passed": False}, "replan_count": 1}, max_replans=1) == "end"
+    assert route_from_critic({"critic_verdict": {"passed": True}, "replan_count": 1}, max_replans=1) == "shopping_subgraph"
+
+
+def test_critic_routes_successful_planning_to_shopping():
+    assert (
+        route_from_critic({"critic_verdict": {"passed": True}, "replan_count": 0, "current_phase": "planning"})
+        == "shopping_subgraph"
+    )
+
+
+def test_critic_ends_after_shopping_review():
+    assert route_from_critic({"critic_verdict": {"passed": True}, "replan_count": 0, "current_phase": "shopping"}) == "end"
+    assert route_from_critic({"critic_verdict": {"passed": False}, "replan_count": 0, "current_phase": "shopping"}) == "end"

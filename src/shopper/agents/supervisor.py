@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Literal
 
 from shopper.schemas import CriticVerdict
 
@@ -17,8 +17,13 @@ def route_from_supervisor(state: Dict[str, Any]) -> str:
 
 def route_from_critic(state: Dict[str, Any], max_replans: int = 3) -> str:
     verdict = CriticVerdict.model_validate(state["critic_verdict"])
-    if verdict.passed:
+    current_phase = state.get("current_phase", "planning")
+    assert current_phase in ("planning", "shopping")
+    phase: Literal["planning", "shopping"] = current_phase
+    if phase == "shopping":
         return "end"
+    if verdict.passed:
+        return "shopping_subgraph"
     if state["replan_count"] >= max_replans:
         return "end"
     return "planning_subgraph"

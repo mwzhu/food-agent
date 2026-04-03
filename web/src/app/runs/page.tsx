@@ -47,8 +47,8 @@ export default function RunsPage() {
           </p>
           <CardTitle className="text-4xl md:text-5xl">All recorded planning runs for {userId}</CardTitle>
           <CardDescription className="max-w-3xl text-base">
-            Each run preserves the streamed Phase 2 state snapshot so you can review what the
-            planner searched, selected, and verified before later shopping phases arrive.
+            Each run preserves the full Phase 3 state snapshot so you can review what the planner
+            searched, selected, verified, and turned into a grocery list.
           </CardDescription>
         </CardHeader>
       </Card>

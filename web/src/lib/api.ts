@@ -1,4 +1,7 @@
 import type {
+  FridgeItemCreate,
+  FridgeItemRead,
+  FridgeItemUpdate,
   RunCreateRequest,
   RunRead,
   RunTraceRead,
@@ -44,7 +47,16 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
     throw new ApiError(response.status, detail || "Request failed.");
   }
 
-  return (await response.json()) as T;
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
+  const text = await response.text();
+  if (!text) {
+    return undefined as T;
+  }
+
+  return JSON.parse(text) as T;
 }
 
 export function createUser(payload: UserProfileCreate): Promise<UserProfileRead> {
@@ -62,6 +74,34 @@ export function updateUser(userId: string, payload: UserProfileUpdate): Promise<
   return request<UserProfileRead>(`/v1/users/${userId}`, {
     method: "PUT",
     body: JSON.stringify(payload),
+  });
+}
+
+export function listInventory(userId: string): Promise<FridgeItemRead[]> {
+  return request<FridgeItemRead[]>(`/v1/users/${userId}/inventory`);
+}
+
+export function createInventoryItem(userId: string, payload: FridgeItemCreate): Promise<FridgeItemRead> {
+  return request<FridgeItemRead>(`/v1/users/${userId}/inventory`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateInventoryItem(
+  userId: string,
+  itemId: number,
+  payload: FridgeItemUpdate,
+): Promise<FridgeItemRead> {
+  return request<FridgeItemRead>(`/v1/users/${userId}/inventory/${itemId}`, {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+}
+
+export async function deleteInventoryItem(userId: string, itemId: number): Promise<void> {
+  await request<null>(`/v1/users/${userId}/inventory/${itemId}`, {
+    method: "DELETE",
   });
 }
 

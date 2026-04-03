@@ -24,7 +24,7 @@ async def main() -> int:
     parser.add_argument(
         "--eval",
         required=True,
-        help="Single eval name or a comma-separated list: nutrition,meal_relevance,safety,groundedness",
+        help="Single eval name or a comma-separated list: nutrition,meal_relevance,safety,groundedness,grocery_completeness",
     )
     args = parser.parse_args()
 
@@ -36,6 +36,7 @@ async def main() -> int:
         context_assembler=context_assembler,
         memory_store=memory_store,
         recipe_store=recipe_store,
+        session_factory=memory_store.session_factory,
     )
     runner = EvaluationRunner(graph=graph, settings=settings, recipe_store=recipe_store)
 
