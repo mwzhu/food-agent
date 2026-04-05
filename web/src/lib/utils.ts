@@ -32,11 +32,15 @@ export function formatLabel(value: string): string {
     .join(" ");
 }
 
-export function formatCurrency(value: number): string {
+export function formatCurrency(
+  value: number,
+  options: { minimumFractionDigits?: number; maximumFractionDigits?: number } = {},
+): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
-    maximumFractionDigits: 0,
+    minimumFractionDigits: options.minimumFractionDigits ?? 0,
+    maximumFractionDigits: options.maximumFractionDigits ?? 2,
   }).format(value);
 }
 

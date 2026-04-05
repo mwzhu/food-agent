@@ -6,13 +6,24 @@ from typing import Any, Dict, Literal, Mapping, Optional
 from shopper.config import Settings, get_settings
 from shopper.memory.store import MemoryStore
 from shopper.memory.types import AssembledContext, ContextBudget, EpisodicMemory
-from shopper.schemas import CriticVerdict, FridgeItemSnapshot, GroceryItem, MealSlot, NutritionPlan, PreferenceSummary
+from shopper.schemas import (
+    BudgetSummary,
+    CriticVerdict,
+    FridgeItemSnapshot,
+    GroceryItem,
+    MealSlot,
+    NutritionPlan,
+    PreferenceSummary,
+    PurchaseOrder,
+    StoreSummary,
+)
 
 
 NodeName = Literal[
     "load_memory",
     "nutrition_planner",
     "meal_selector",
+    "price_optimizer",
     "critic",
     "planning_critic",
     "shopping_critic",
@@ -85,6 +96,36 @@ class ContextAssembler:
                 "dietary_restrictions": profile["dietary_restrictions"],
             }
             token_budget = 2200
+        elif node_name == "price_optimizer":
+            grocery_list = [GroceryItem.model_validate(item) for item in state["grocery_list"]]
+            memories = []
+            payload = {
+                "user_profile_summary": self._profile_summary(profile),
+                "schedule": self._compact_schedule(profile["schedule_json"]),
+                "grocery_list": [
+                    {
+                        "name": item.name,
+                        "shopping_quantity": item.shopping_quantity,
+                        "unit": item.unit,
+                        "category": item.category,
+                    }
+                    for item in grocery_list
+                    if not item.already_have and item.shopping_quantity > 0
+                ],
+            }
+            if state.get("store_summaries"):
+                store_summaries = [StoreSummary.model_validate(item) for item in state["store_summaries"]]
+                payload["store_summaries"] = [
+                    {
+                        "store": summary.store,
+                        "subtotal": summary.subtotal,
+                        "delivery_fee": summary.delivery_fee,
+                        "total": summary.total,
+                        "all_items_available": summary.all_items_available,
+                    }
+                    for summary in store_summaries
+                ]
+            token_budget = 1800
         elif node_name == "shopping_critic":
             meals = [MealSlot.model_validate(meal) for meal in state["selected_meals"]]
             memories = []
@@ -110,6 +151,20 @@ class ContextAssembler:
             if state.get("fridge_inventory"):
                 fridge_inventory = [FridgeItemSnapshot.model_validate(item) for item in state["fridge_inventory"]]
                 payload["fridge_inventory"] = self._compact_fridge_inventory(fridge_inventory)
+            if state.get("purchase_orders"):
+                purchase_orders = [PurchaseOrder.model_validate(item) for item in state["purchase_orders"]]
+                payload["purchase_orders"] = [
+                    {
+                        "store": order.store,
+                        "channel": order.channel,
+                        "total_cost": order.total_cost,
+                        "item_count": len(order.items),
+                    }
+                    for order in purchase_orders
+                ]
+            if state.get("budget_summary") is not None:
+                budget_summary = BudgetSummary.model_validate(state["budget_summary"])
+                payload["budget_summary"] = budget_summary.model_dump(mode="json")
             token_budget = 2200
         else:
             assert False, node_name

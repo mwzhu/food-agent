@@ -4,7 +4,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { BudgetBar } from "@/components/grocery/budget-bar";
 import { GroceryList } from "@/components/grocery/grocery-list";
+import { PriceTable } from "@/components/grocery/price-table";
+import { PurchaseOrders } from "@/components/grocery/purchase-orders";
 import { MealCalendar } from "@/components/plan/meal-calendar";
 import { NutritionSummary } from "@/components/plan/nutrition-summary";
 import { RunProgress } from "@/components/run/run-progress";
@@ -82,7 +85,7 @@ export default function RunDetailPage() {
           <CardTitle className="text-4xl md:text-5xl">Planning run {run.run_id.slice(0, 8)}</CardTitle>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground">
             Created {formatDateTime(run.created_at)} for {run.user_id}. The state below is the
-            live Phase 3 artifact returned by the backend worker and streaming layer.
+            live Phase 4 artifact returned by the backend worker and streaming layer.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Badge variant={run.status === "completed" ? "success" : run.status === "failed" ? "outline" : "default"}>
@@ -138,7 +141,23 @@ export default function RunDetailPage() {
                   <Link href="/inventory">Edit fridge</Link>
                 </Button>
               </div>
+              <BudgetBar
+                budgetSummary={run.state_snapshot.budget_summary}
+                isShoppingActive={run.status === "running" && run.state_snapshot.current_phase === "shopping"}
+                replanReason={run.state_snapshot.replan_reason}
+              />
               <GroceryList items={run.state_snapshot.grocery_list} />
+              <PriceTable
+                items={run.state_snapshot.grocery_list}
+                purchaseOrders={run.state_snapshot.purchase_orders}
+                quotes={run.state_snapshot.store_quotes}
+                summaries={run.state_snapshot.store_summaries}
+              />
+              <PurchaseOrders
+                orders={run.state_snapshot.purchase_orders}
+                rationale={run.state_snapshot.price_rationale}
+                strategy={run.state_snapshot.price_strategy}
+              />
             </div>
           ) : run.state_snapshot.phase_statuses.shopping === "running" || run.status === "running" ? (
             <Card>
@@ -153,8 +172,8 @@ export default function RunDetailPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  The shopping phase will diff recipe ingredients against your saved fridge inventory before it renders
-                  the grocery list here.
+                  The shopping phase will diff recipe ingredients against your saved fridge inventory, compare store
+                  prices, and build purchase orders before it renders the result here.
                 </p>
               </CardContent>
             </Card>
@@ -242,11 +261,11 @@ export default function RunDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Critic</p>
-              <CardTitle>Verification verdict</CardTitle>
-            </CardHeader>
+            <Card>
+              <CardHeader>
+                <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Critic</p>
+                <CardTitle>Verification verdict</CardTitle>
+              </CardHeader>
             <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
               {run.state_snapshot.critic_verdict ? (
                 <>
@@ -273,7 +292,7 @@ export default function RunDetailPage() {
                   ) : null}
                 </>
               ) : (
-                <p>Critic results will appear once the planning phase finishes.</p>
+                <p>Critic results will appear once the active phase finishes.</p>
               )}
             </CardContent>
           </Card>

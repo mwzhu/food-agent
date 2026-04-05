@@ -106,6 +106,10 @@ def test_post_run_completes_and_persists_state(tmp_path):
         assert completed_run["state_snapshot"]["phase_statuses"]["planning"] == "completed"
         assert completed_run["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
         assert completed_run["state_snapshot"]["grocery_list"]
+        assert completed_run["state_snapshot"]["store_quotes"]
+        assert completed_run["state_snapshot"]["store_summaries"]
+        assert completed_run["state_snapshot"]["purchase_orders"]
+        assert completed_run["state_snapshot"]["budget_summary"]["within_budget"] is True
         assert completed_run["state_snapshot"]["trace_metadata"]["trace_id"]
         assert completed_run["state_snapshot"]["trace_metadata"]["source"] == "api"
 

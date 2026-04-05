@@ -94,6 +94,8 @@ def build_planner_graph(
     )
     shopping_subgraph = build_shopping_subgraph(
         get_fridge_contents_tool=get_fridge_contents_tool,
+        context_assembler=context_assembler,
+        chat_model=chat_model,
     )
 
     async def load_memory_wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -262,6 +264,7 @@ def build_planner_graph(
             ShoppingSubgraphState(
                 run_id=state["run_id"],
                 user_id=state["user_id"],
+                user_profile=state["user_profile"],
                 selected_meals=state["selected_meals"],
                 fridge_inventory=state.get("fridge_inventory", []),
                 context_metadata=[],
@@ -269,7 +272,14 @@ def build_planner_graph(
         )
         return {
             "grocery_list": result["grocery_list"],
+            "store_quotes": result.get("store_quotes", []),
+            "store_summaries": result.get("store_summaries", []),
+            "purchase_orders": result.get("purchase_orders", []),
+            "budget_summary": result.get("budget_summary"),
             "fridge_inventory": result["fridge_inventory"],
+            "replan_reason": result.get("replan_reason"),
+            "price_strategy": result.get("price_strategy"),
+            "price_rationale": result.get("price_rationale"),
             "context_metadata": result["context_metadata"],
             "current_node": "shopping_subgraph",
             "status": "running",

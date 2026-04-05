@@ -5,7 +5,7 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from shopper.schemas.grocery import GroceryItem
+from shopper.schemas.grocery import BudgetSummary, GroceryItem, PurchaseOrder, StoreQuote, StoreSummary
 from shopper.schemas.inventory import FridgeItemSnapshot
 from shopper.schemas.user import UserProfileBase
 
@@ -138,6 +138,10 @@ class PlannerStateSnapshot(BaseModel):
     nutrition_plan: Optional[NutritionPlan] = None
     selected_meals: List[MealSlot] = Field(default_factory=list)
     grocery_list: List[GroceryItem] = Field(default_factory=list)
+    store_quotes: List[StoreQuote] = Field(default_factory=list)
+    store_summaries: List[StoreSummary] = Field(default_factory=list)
+    purchase_orders: List[PurchaseOrder] = Field(default_factory=list)
+    budget_summary: Optional[BudgetSummary] = None
     fridge_inventory: List[FridgeItemSnapshot] = Field(default_factory=list)
     user_preferences_learned: PreferenceSummary = Field(default_factory=PreferenceSummary)
     retrieved_memories: List[Dict[str, Any]] = Field(default_factory=list)
@@ -151,6 +155,9 @@ class PlannerStateSnapshot(BaseModel):
     current_phase: Optional[PhaseName] = None
     phase_statuses: PhaseStatuses = Field(default_factory=PhaseStatuses)
     replan_count: int = 0
+    replan_reason: Optional[str] = None
+    price_strategy: Optional[str] = None
+    price_rationale: Optional[str] = None
     latest_error: Optional[str] = None
     trace_metadata: TraceMetadata = Field(default_factory=TraceMetadata)
 
@@ -203,6 +210,10 @@ class PlannerStateSnapshot(BaseModel):
                 "run_id": run_id,
                 "status": "running",
                 "grocery_list": [],
+                "store_quotes": [],
+                "store_summaries": [],
+                "purchase_orders": [],
+                "budget_summary": None,
                 "fridge_inventory": [],
                 "critic_verdict": None,
                 "repair_instructions": [],
@@ -217,6 +228,9 @@ class PlannerStateSnapshot(BaseModel):
                     shopping="running",
                 ),
                 "replan_count": 0,
+                "replan_reason": None,
+                "price_strategy": None,
+                "price_rationale": None,
                 "latest_error": None,
                 "trace_metadata": TraceMetadata(),
             }
