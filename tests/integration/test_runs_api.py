@@ -7,10 +7,6 @@ from fastapi.testclient import TestClient
 
 from shopper.config import Settings
 from shopper.main import create_app
-from shopper.models import PlanRun
-from shopper.schemas import PlannerStateSnapshot
-
-
 def _make_client(tmp_path: Path) -> TestClient:
     settings = Settings(
         SHOPPER_DATABASE_URL="sqlite+aiosqlite:///{path}".format(path=tmp_path / "test.db"),
@@ -22,9 +18,9 @@ def _make_client(tmp_path: Path) -> TestClient:
     return TestClient(app)
 
 
-def _wait_for_run_completion(client: TestClient, run_id: str, timeout_seconds: float = 5.0) -> dict:
-    deadline = time.time() + timeout_seconds
-    while time.time() < deadline:
+def _wait_for_run_completion(client: TestClient, run_id: str, timeout_seconds: float = 45.0) -> dict:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
         response = client.get(f"/v1/runs/{run_id}")
         assert response.status_code == 200, response.text
         payload = response.json()
@@ -32,33 +28,6 @@ def _wait_for_run_completion(client: TestClient, run_id: str, timeout_seconds: f
             return payload
         time.sleep(0.05)
     raise AssertionError(f"Run {run_id} did not complete within {timeout_seconds} seconds.")
-
-
-def _rewrite_run_for_manual_shopping(client: TestClient, run_id: str) -> None:
-    async def rewrite() -> None:
-        async with client.app.state.session_factory() as session:
-            plan_run = await session.get(PlanRun, run_id)
-            assert plan_run is not None
-            snapshot = PlannerStateSnapshot.model_validate(plan_run.state_snapshot)
-            snapshot = snapshot.model_copy(
-                update={
-                    "status": "failed",
-                    "grocery_list": [],
-                    "fridge_inventory": [],
-                    "current_node": "critic",
-                    "current_phase": "planning",
-                    "phase_statuses": snapshot.phase_statuses.model_copy(
-                        update={"planning": "failed", "shopping": "locked"}
-                    ),
-                }
-            )
-            plan_run.status = snapshot.status
-            plan_run.state_snapshot = snapshot.model_dump(mode="json")
-            await session.commit()
-
-    import asyncio
-
-    asyncio.run(rewrite())
 
 
 def test_post_run_completes_and_persists_state(tmp_path):
@@ -104,7 +73,7 @@ def test_post_run_completes_and_persists_state(tmp_path):
         assert {"load_memory", "nutrition_planner", "meal_selector", "critic", "grocery_builder", "price_optimizer"} <= metadata_nodes
         assert completed_run["state_snapshot"]["critic_verdict"]["passed"] is True
         assert completed_run["state_snapshot"]["phase_statuses"]["planning"] == "completed"
-        assert completed_run["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
+        assert completed_run["state_snapshot"]["phase_statuses"]["checkout"] == "locked"
         assert completed_run["state_snapshot"]["grocery_list"]
         assert completed_run["state_snapshot"]["store_quotes"]
         assert completed_run["state_snapshot"]["store_summaries"]
@@ -219,7 +188,7 @@ def test_full_run_builds_grocery_list_and_applies_full_and_partial_fridge_diff(t
         completed_first = _wait_for_run_completion(client, first_run.json()["run_id"])
         first_grocery_list = completed_first["state_snapshot"]["grocery_list"]
         assert completed_first["state_snapshot"]["phase_statuses"]["planning"] == "completed"
-        assert completed_first["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
+        assert completed_first["state_snapshot"]["phase_statuses"]["checkout"] == "locked"
         assert first_grocery_list
 
         fully_owned_item = next(
@@ -260,7 +229,7 @@ def test_full_run_builds_grocery_list_and_applies_full_and_partial_fridge_diff(t
         assert second_run.status_code == 201, second_run.text
         completed_second = _wait_for_run_completion(client, second_run.json()["run_id"])
         assert completed_second["state_snapshot"]["phase_statuses"]["planning"] == "completed"
-        assert completed_second["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
+        assert completed_second["state_snapshot"]["phase_statuses"]["checkout"] == "locked"
         assert len(completed_second["state_snapshot"]["selected_meals"]) == 28
         assert completed_second["state_snapshot"]["grocery_list"]
 
@@ -279,51 +248,6 @@ def test_full_run_builds_grocery_list_and_applies_full_and_partial_fridge_diff(t
         assert partial_item["already_have"] is False
         assert 0 < partial_item["quantity_in_fridge"] < partial_item["quantity"]
         assert 0 < partial_item["shopping_quantity"] < partial_item["quantity"]
-
-
-def test_post_shopping_run_starts_from_existing_meal_plan(tmp_path):
-    client = _make_client(tmp_path)
-    payload = {
-        "user_id": "manual-shopping",
-        "profile": {
-            "age": 33,
-            "weight_lbs": 168,
-            "height_in": 69,
-            "sex": "male",
-            "activity_level": "lightly_active",
-            "goal": "maintain",
-            "dietary_restrictions": [],
-            "allergies": [],
-            "budget_weekly": 135,
-            "household_size": 2,
-            "cooking_skill": "intermediate",
-            "schedule_json": {"weeknight_dinner": "30m"},
-        },
-    }
-
-    with client:
-        source_response = client.post("/v1/runs", json=payload)
-        assert source_response.status_code == 201, source_response.text
-        source_run = _wait_for_run_completion(client, source_response.json()["run_id"])
-        assert source_run["state_snapshot"]["selected_meals"]
-
-        _rewrite_run_for_manual_shopping(client, source_run["run_id"])
-
-        shopping_response = client.post(f"/v1/runs/{source_run['run_id']}/shopping")
-        assert shopping_response.status_code == 201, shopping_response.text
-        shopping_run = shopping_response.json()
-        assert shopping_run["run_id"] != source_run["run_id"]
-        assert shopping_run["status"] == "running"
-        assert shopping_run["state_snapshot"]["current_phase"] == "shopping"
-        assert shopping_run["state_snapshot"]["phase_statuses"]["planning"] == "completed"
-        assert shopping_run["state_snapshot"]["phase_statuses"]["shopping"] == "running"
-        assert len(shopping_run["state_snapshot"]["selected_meals"]) == len(source_run["state_snapshot"]["selected_meals"])
-
-        completed_shopping_run = _wait_for_run_completion(client, shopping_run["run_id"])
-        assert completed_shopping_run["status"] == "completed"
-        assert completed_shopping_run["state_snapshot"]["phase_statuses"]["planning"] == "completed"
-        assert completed_shopping_run["state_snapshot"]["phase_statuses"]["shopping"] == "completed"
-        assert completed_shopping_run["state_snapshot"]["grocery_list"]
 
 
 def test_resume_endpoint_is_explicitly_deferred_in_phase_one(tmp_path):

@@ -124,12 +124,6 @@ export function getRun(runId: string): Promise<RunRead> {
   return request<RunRead>(`/v1/runs/${runId}`);
 }
 
-export function createShoppingRun(runId: string): Promise<RunRead> {
-  return request<RunRead>(`/v1/runs/${runId}/shopping`, {
-    method: "POST",
-  });
-}
-
 export function getRunTrace(runId: string): Promise<RunTraceRead> {
   return request<RunTraceRead>(`/v1/runs/${runId}/trace`);
 }

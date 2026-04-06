@@ -66,7 +66,7 @@ class PriceOptimizerNode:
         await emit_run_event(
             run_id=state["run_id"],
             event_type="node_entered",
-            phase="shopping",
+            phase="planning",
             node_name="price_optimizer",
             message="Collecting store quotes in parallel and optimizing purchase orders against the weekly budget.",
         )
@@ -88,7 +88,7 @@ class PriceOptimizerNode:
             await emit_run_event(
                 run_id=state["run_id"],
                 event_type="node_completed",
-                phase="shopping",
+                phase="planning",
                 node_name="price_optimizer",
                 message="Every required ingredient is already in the fridge, so there is nothing left to price.",
                 data={"grocery_item_count": len(grocery_list), "purchase_order_count": 0},
@@ -140,7 +140,7 @@ class PriceOptimizerNode:
         await emit_run_event(
             run_id=state["run_id"],
             event_type="node_completed",
-            phase="shopping",
+            phase="planning",
             node_name="price_optimizer",
             message=(
                 "Optimized {order_count} purchase orders using the {strategy} strategy."

@@ -18,7 +18,7 @@ export type RunEventType =
   | "node_completed"
   | "run_completed"
   | "error";
-export type PhaseName = "memory" | "planning" | "shopping" | "checkout";
+export type PhaseName = "memory" | "planning" | "checkout";
 export type PhaseStatus = "pending" | "running" | "completed" | "locked" | "failed";
 export type RunLifecycleStatus = "pending" | "running" | "completed" | "failed";
 export type RunStatus = Exclude<RunLifecycleStatus, "pending">;
@@ -232,7 +232,6 @@ export interface MemorySnapshot {
 export interface PhaseStatuses {
   memory: PhaseStatus;
   planning: PhaseStatus;
-  shopping: PhaseStatus;
   checkout: PhaseStatus;
 }
 

@@ -20,26 +20,17 @@ from shopper.evaluation.evaluators.nutrition_accuracy import NutritionAccuracyEv
 from shopper.evaluation.evaluators.safety import SafetyEvaluator
 from shopper.schemas import FridgeItemSnapshot, GroceryItem, MealSlot, NutritionPlan, PlannerStateSnapshot
 from shopper.schemas.user import UserProfileBase
-from shopper.services import calculate_macros, calculate_tdee
+from shopper.services import (
+    aggregate_quantities,
+    calculate_macros,
+    calculate_tdee,
+    categorize,
+    diff_against_fridge,
+    extract_ingredients,
+)
 
 
 DATASET_DIR = Path(__file__).resolve().parent / "datasets"
-SHOPPING_EVAL_PROFILE = {
-    "age": 30,
-    "weight_lbs": 170,
-    "height_in": 68,
-    "sex": "female",
-    "activity_level": "lightly_active",
-    "goal": "maintain",
-    "dietary_restrictions": [],
-    "allergies": [],
-    "budget_weekly": 140,
-    "household_size": 1,
-    "cooking_skill": "intermediate",
-    "schedule_json": {"weeknight_dinner": "30m"},
-}
-
-
 class EvaluationRunner:
     def __init__(self, graph, settings: Settings, recipe_store) -> None:
         self.graph = graph
@@ -188,37 +179,30 @@ class EvaluationRunner:
         for case in cases:
             meals = self._build_case_meals(case)
             fridge_inventory = self._build_case_fridge_inventory(case)
-            initial_state = self._build_shopping_eval_state(case["case_id"], meals, fridge_inventory)
-            graph_result = await invoke_planner_graph(self.graph, initial_state, self.settings, source="eval")
-            grocery_list = [GroceryItem.model_validate(item) for item in graph_result["grocery_list"]]
+            grocery_list = categorize(
+                diff_against_fridge(
+                    aggregate_quantities(extract_ingredients(meals)),
+                    fridge_inventory,
+                )
+            )
             evaluation = self._evaluate_shopping_case(eval_name, case, meals, grocery_list, fridge_inventory)
-            critic_verdict = graph_result["critic_verdict"]
-            if not critic_verdict["passed"]:
-                evaluation = {
-                    **evaluation,
-                    "passed": False,
-                    "issues": sorted(
-                        set(
-                            list(evaluation["issues"])
-                            + [
-                                "Shopping critic failed: {issue}".format(issue=issue)
-                                for issue in critic_verdict["issues"]
-                            ]
-                        )
-                    ),
-                }
             results.append(
                 {
                     "case_id": case["case_id"],
                     "passed": evaluation["passed"],
                     "issues": evaluation["issues"],
-                    "trace_metadata": graph_result.get("trace_metadata", {}),
-                    "nutrition_plan": graph_result.get("nutrition_plan"),
+                    "trace_metadata": {
+                        "kind": "deterministic_component",
+                        "project": self.settings.langsmith_project,
+                        "trace_id": None,
+                        "source": "eval",
+                    },
+                    "nutrition_plan": None,
                     "selected_meals": [meal.model_dump(mode="json") for meal in meals],
                     "grocery_list": [item.model_dump(mode="json") for item in grocery_list],
                     "meal_plan": case["meal_plan"],
                     "fridge_inventory": case["fridge_inventory"],
-                    "critic_verdict": graph_result.get("critic_verdict"),
+                    "critic_verdict": None,
                     **{key: value for key, value in evaluation.items() if key not in {"passed", "issues"}},
                 }
             )
@@ -240,31 +224,6 @@ class EvaluationRunner:
             user_id=case["case_id"],
             user_profile=case["profile"],
         ).model_dump(mode="json")
-
-    def _build_shopping_eval_state(
-        self,
-        case_id: str,
-        meals: list[MealSlot],
-        fridge_inventory: list[FridgeItemSnapshot],
-    ) -> dict[str, Any]:
-        snapshot = PlannerStateSnapshot.starting(
-            run_id="eval-{case_id}".format(case_id=case_id),
-            user_id=case_id,
-            user_profile=SHOPPING_EVAL_PROFILE,
-        )
-        snapshot = snapshot.model_copy(
-            update={
-                "selected_meals": meals,
-                "fridge_inventory": fridge_inventory,
-                "status": "running",
-                "current_node": "supervisor",
-                "current_phase": "shopping",
-                "phase_statuses": snapshot.phase_statuses.model_copy(
-                    update={"memory": "completed", "planning": "completed", "shopping": "running", "checkout": "locked"}
-                ),
-            }
-        )
-        return snapshot.model_dump(mode="json")
 
     def _build_case_meals(self, case: dict[str, Any]) -> list[MealSlot]:
         meals: list[MealSlot] = []

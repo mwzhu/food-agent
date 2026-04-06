@@ -8,10 +8,10 @@ import { cn, formatCurrency } from "@/lib/utils";
 type BudgetBarProps = {
   budgetSummary: BudgetSummary | null;
   replanReason: string | null;
-  isShoppingActive: boolean;
+  isPlanningActive: boolean;
 };
 
-export function BudgetBar({ budgetSummary, replanReason, isShoppingActive }: BudgetBarProps) {
+export function BudgetBar({ budgetSummary, replanReason, isPlanningActive }: BudgetBarProps) {
   if (!budgetSummary) {
     return null;
   }
@@ -64,7 +64,7 @@ export function BudgetBar({ budgetSummary, replanReason, isShoppingActive }: Bud
         {replanReason ? (
           <div className="rounded-[1.1rem] border border-border bg-background/70 p-4 text-sm leading-6 text-muted-foreground">
             <strong className="text-foreground">
-              {isShoppingActive && !budgetSummary.within_budget ? "Replanning..." : "Budget note"}
+              {isPlanningActive && !budgetSummary.within_budget ? "Replanning..." : "Budget note"}
             </strong>{" "}
             {replanReason}
           </div>

@@ -125,7 +125,6 @@ class FridgeItemState(TypedDict):
 class PhaseStatusesState(TypedDict):
     memory: PhaseStatus
     planning: PhaseStatus
-    shopping: PhaseStatus
     checkout: PhaseStatus
 
 
@@ -154,6 +153,7 @@ class PlannerState(TypedDict, total=False):
     phase_statuses: PhaseStatusesState
     replan_count: int
     replan_reason: str
+    issue_finding_codes: List[str]
     price_strategy: str
     price_rationale: str
     latest_error: str
@@ -166,6 +166,12 @@ class PlanningSubgraphState(TypedDict, total=False):
     user_profile: Dict[str, Any]
     nutrition_plan: NutritionPlanState
     selected_meals: List[MealSlotState]
+    grocery_list: List[GroceryItemState]
+    store_quotes: List[StoreQuoteState]
+    store_summaries: List[StoreSummaryState]
+    purchase_orders: List[PurchaseOrderState]
+    budget_summary: BudgetSummaryState
+    fridge_inventory: List[FridgeItemState]
     user_preferences_learned: Dict[str, Any]
     retrieved_memories: List[Dict[str, Any]]
     critic_verdict: CriticVerdictState
@@ -173,22 +179,9 @@ class PlanningSubgraphState(TypedDict, total=False):
     blocked_recipe_ids: List[str]
     avoid_cuisines: List[str]
     replan_count: int
-    context_metadata: Annotated[List[Dict[str, Any]], operator.add]
-    messages: Annotated[List[BaseMessage], add_messages]
-
-
-class ShoppingSubgraphState(TypedDict, total=False):
-    run_id: str
-    user_id: str
-    user_profile: Dict[str, Any]
-    selected_meals: List[MealSlotState]
-    grocery_list: List[GroceryItemState]
-    store_quotes: List[StoreQuoteState]
-    store_summaries: List[StoreSummaryState]
-    purchase_orders: List[PurchaseOrderState]
-    budget_summary: BudgetSummaryState
-    fridge_inventory: List[FridgeItemState]
     replan_reason: str
+    issue_finding_codes: List[str]
     price_strategy: str
     price_rationale: str
     context_metadata: Annotated[List[Dict[str, Any]], operator.add]
+    messages: Annotated[List[BaseMessage], add_messages]

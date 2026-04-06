@@ -6,9 +6,20 @@ from typing import Any, Dict, List, Set
 from shopper.schemas import CriticVerdict, MealSlot
 
 
+FULFILLMENT_ONLY_ISSUE_CODES = frozenset({
+    "P_GROCERY_COVERAGE",
+    "P_GROCERY_TRACEABILITY",
+    "P_PURCHASE_COVERAGE",
+    "P_BUDGET",
+    "P_STORE_CHOICE",
+})
+
+
 def derive_replan_feedback(state: Dict[str, Any]) -> Dict[str, Any]:
     verdict = CriticVerdict.model_validate(state["critic_verdict"])
     meals = [MealSlot.model_validate(item) for item in state.get("selected_meals", [])]
+    replan_reason = state.get("replan_reason")
+    issue_finding_codes = sorted(_issue_finding_codes(verdict))
 
     blocked_recipe_ids = sorted(
         set(state.get("blocked_recipe_ids", []))
@@ -21,6 +32,7 @@ def derive_replan_feedback(state: Dict[str, Any]) -> Dict[str, Any]:
     repair_instructions = _dedupe(
         list(state.get("repair_instructions", []))
         + verdict.repair_instructions
+        + (["Address the previous fulfillment failure directly: {reason}".format(reason=replan_reason)] if replan_reason else [])
         + _replan_guidance(meals)
     )
 
@@ -29,6 +41,7 @@ def derive_replan_feedback(state: Dict[str, Any]) -> Dict[str, Any]:
         "repair_instructions": repair_instructions,
         "blocked_recipe_ids": blocked_recipe_ids,
         "avoid_cuisines": avoid_cuisines,
+        "issue_finding_codes": issue_finding_codes,
     }
 
 
@@ -41,10 +54,17 @@ def _blocked_recipe_ids(verdict: CriticVerdict, meals: List[MealSlot]) -> Set[st
             if _mentions_recipe_id(lowered_issue, lowered_recipe_id):
                 blocked.add(recipe_id)
 
-    if not blocked and meals:
+    issue_codes = _issue_finding_codes(verdict)
+    fulfillment_only_issues = issue_codes and issue_codes <= FULFILLMENT_ONLY_ISSUE_CODES
+
+    if not blocked and meals and not fulfillment_only_issues:
         blocked.add(min(meals, key=lambda meal: meal.macro_fit_score).recipe_id)
 
     return blocked
+
+
+def _issue_finding_codes(verdict: CriticVerdict) -> Set[str]:
+    return {finding.code for finding in verdict.findings if finding.severity == "issue"}
 
 
 def _mentions_recipe_id(issue_text: str, recipe_id: str) -> bool:

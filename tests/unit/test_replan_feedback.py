@@ -10,6 +10,18 @@ def test_replan_feedback_increments_counter_and_derives_constraints():
             "issues": ["Recipe dinner-bad-choice is missing from the retrieval store."],
             "warnings": ["Too much Italian back-to-back in this plan."],
             "repair_instructions": ["Select only recipes that resolve from the recipe store."],
+            "findings": [
+                {
+                    "code": "P_GROUNDEDNESS",
+                    "severity": "issue",
+                    "message": "Recipe dinner-bad-choice is missing from the retrieval store.",
+                },
+                {
+                    "code": "P_VARIETY",
+                    "severity": "warning",
+                    "message": "Too much Italian back-to-back in this plan.",
+                },
+            ],
         },
         "selected_meals": [
             {
@@ -57,6 +69,7 @@ def test_replan_feedback_increments_counter_and_derives_constraints():
     assert "dinner-bad-choice" in result["blocked_recipe_ids"]
     assert "italian" in result["avoid_cuisines"]
     assert "Select only recipes that resolve from the recipe store." in result["repair_instructions"]
+    assert result["issue_finding_codes"] == ["P_GROUNDEDNESS"]
 
 
 def test_replan_feedback_does_not_block_generic_hyphenated_issue_text():
@@ -134,3 +147,50 @@ def test_replan_feedback_uses_failed_plan_context_when_no_recipe_is_called_out()
 
     assert result["blocked_recipe_ids"] == ["lunch-repeat-meal"]
     assert "Use the previous failed meal plan as context and address the critic feedback directly." in result["repair_instructions"]
+
+
+def test_replan_feedback_does_not_arbitrarily_block_meals_for_budget_only_failures():
+    state = {
+        "critic_verdict": {
+            "passed": False,
+            "issues": ["Optimized purchase orders exceed the weekly budget by $18.00."],
+            "warnings": [],
+            "repair_instructions": ["Choose cheaper meals and ingredients so the resulting basket fits within the weekly budget."],
+            "findings": [
+                {
+                    "code": "P_BUDGET",
+                    "severity": "issue",
+                    "message": "Optimized purchase orders exceed the weekly budget by $18.00.",
+                }
+            ],
+        },
+        "selected_meals": [
+            {
+                "day": "monday",
+                "meal_type": "dinner",
+                "recipe_id": "expensive-dinner",
+                "recipe_name": "Expensive Dinner",
+                "cuisine": "french",
+                "prep_time_min": 30,
+                "serving_multiplier": 1.0,
+                "calories": 650,
+                "protein_g": 38,
+                "carbs_g": 42,
+                "fat_g": 28,
+                "tags": [],
+                "macro_fit_score": 0.88,
+                "recipe": None,
+            }
+        ],
+        "repair_instructions": [],
+        "replan_count": 0,
+        "blocked_recipe_ids": [],
+        "avoid_cuisines": [],
+        "replan_reason": "The cheapest complete basket still lands 18.00 over the weekly budget.",
+    }
+
+    result = derive_replan_feedback(state)
+
+    assert result["blocked_recipe_ids"] == []
+    assert any("fulfillment failure" in instruction for instruction in result["repair_instructions"])
+    assert result["issue_finding_codes"] == ["P_BUDGET"]

@@ -20,12 +20,12 @@ This plan includes phase-by-phase milestone notes. When those historical snapsho
 
 ### Current Architecture
 
-- Top-level graph: `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → shopping_subgraph → shopping_critic_subgraph → end`
-- Planning worker path: `nutrition_planner` does deterministic macro-target calculation plus a narrow nutrition-plan validator; `meal_selector` does whole-week recipe selection and then runs deterministic slot-coverage and safety guards before returning.
-- Planning boundary critic: `PlanningCriticNode` runs once after the planning subgraph, combines deterministic week-level checks (macro alignment, groundedness, variety heuristics) with optional LLM review, and on failure routes back through a bounded planning replan loop with structured `repair_instructions`.
-- Shopping worker path: `grocery_builder` deterministically aggregates ingredients, diffs against fridge inventory, and validates the derived grocery list; `price_optimizer` fans out to store adapters, applies deterministic ranking and budget guards, and optionally uses an LLM only for final tradeoff selection.
-- Shopping boundary critic: `ShoppingCriticNode` runs once after the shopping subgraph, checks final purchase-order coverage and budget fit, adds optional LLM review, and surfaces structured `repair_instructions` plus `replan_reason` on failure.
-- There is no dedicated substitution node in the current repo. Cost or availability problems are represented as critic feedback and replan reasons inside the existing worker/critic orchestration.
+- Top-level graph: `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → end`
+- Unified upstream worker path: `nutrition_planner → meal_selector → grocery_builder → price_optimizer`
+- `nutrition_planner` does deterministic macro-target calculation plus a narrow nutrition-plan validator; `meal_selector` does whole-week recipe selection and runs deterministic slot-coverage and safety guards before returning.
+- `grocery_builder` deterministically aggregates ingredients and diffs them against fridge inventory; `price_optimizer` fans out to mock store adapters, applies deterministic ranking and budget guards, and optionally uses an LLM only for final tradeoff selection.
+- `PlanningCriticNode` is the single pre-checkout critic. It validates nutrition, safety, schedule fit, groundedness, grocery traceability, purchase-order coverage, budget fit, and store/channel reasonableness, then drives a bounded repair loop with targeted routing: fulfillment-only failures (budget, purchase coverage, store choice, grocery coverage/traceability) re-enter at `grocery_builder`, while meal-level failures re-enter at `meal_selector`.
+- There is no dedicated substitution node in the current repo. Cost or availability problems are represented as critic feedback and replan reasons inside the unified upstream planning loop.
 
 ---
 
@@ -101,7 +101,7 @@ shopper/
 │   │   │   │   └── profile-form.tsx  # User profile form (reused in onboarding + edit)
 │   │   │   ├── run/
 │   │   │   │   ├── run-progress.tsx  # SSE-powered live progress tracker
-│   │   │   │   ├── phase-stepper.tsx # Visual step indicator (planning→shopping→checkout)
+│   │   │   │   ├── phase-stepper.tsx # Visual step indicator (planning→checkout)
 │   │   │   │   └── run-card.tsx      # Run summary card for history list
 │   │   │   ├── plan/
 │   │   │   │   ├── meal-calendar.tsx # 7-day meal plan grid (Phase 2)
@@ -167,18 +167,16 @@ shopper/
 │   │   ├── supervisor.py             # Custom supervisor routing (deterministic + LLM fallback)
 │   │   ├── subgraphs/
 │   │   │   ├── __init__.py
-│   │   │   ├── planning.py           # Planning subgraph (nutrition + meal selection)
-│   │   │   ├── shopping.py           # Shopping subgraph (grocery list + price optimization)
-│   │   │   ├── critic.py             # Boundary critic subgraphs for planning + shopping
+│   │   │   ├── planning.py           # Unified upstream planning subgraph
+│   │   │   ├── critic.py             # Boundary critic subgraph for upstream planning
 │   │   │   └── checkout.py           # Planned future phase
 │   │   ├── nodes/
 │   │   │   ├── __init__.py
 │   │   │   ├── nutrition_planner.py  # Deterministic TDEE + LLM for edge cases
 │   │   │   ├── meal_selector.py      # Whole-week LLM planner + deterministic output guards
-│   │   │   ├── planning_critic.py    # Planning boundary critic
-│   │   │   ├── grocery_builder.py    # Deterministic aggregation/diff + grocery validators
+│   │   │   ├── planning_critic.py    # Unified upstream boundary critic
+│   │   │   ├── grocery_builder.py    # Deterministic aggregation + fridge diff
 │   │   │   ├── price_optimizer.py    # Deterministic ranking + LLM tradeoff decisions
-│   │   │   ├── shopping_critic.py    # Shopping boundary critic
 │   │   │   ├── purchase_executor.py  # Planned future phase
 │   │   │   └── feedback_processor.py # Planned future phase
 │   │   └── tools/
@@ -210,7 +208,6 @@ shopper/
 │   ├── prompts/
 │   │   ├── meal_selector.md
 │   │   ├── planning_critic.md
-│   │   ├── shopping_critic.md
 │   │   └── price_tradeoff.md         # Online vs in-store decision prompt
 │   ├── evaluation/
 │   │   ├── __init__.py
@@ -276,24 +273,20 @@ User Request
   -> planning_subgraph
        nutrition_planner
        meal_selector
-  -> planning_critic_subgraph
-       planning_critic
-       on failure: structured repair_instructions -> planning_subgraph (bounded replan)
-  -> shopping_subgraph
        grocery_builder
        price_optimizer
-  -> shopping_critic_subgraph
-       shopping_critic
-       on failure: structured repair_instructions + replan_reason -> end failed
+  -> planning_critic_subgraph
+       critic
+       on failure: structured repair_instructions -> planning_subgraph (targeted re-entry)
   -> end
 ```
 
-- Worker nodes and subgraphs produce the artifacts for that phase.
+- Worker nodes and subgraphs produce the artifacts for that boundary.
 - Deterministic validators do narrow checks inside the worker steps that own the data.
-- Each phase has exactly one critic at the subgraph boundary.
-- The current bounded repair loop exists on the planning boundary; shopping failures are surfaced through critic feedback and `replan_reason` without a standalone substitution hop.
+- The current implementation has one pre-checkout critic at the upstream planning boundary.
+- The bounded repair loop uses targeted routing based on critic finding codes: fulfillment-only failures (`P_BUDGET`, `P_PURCHASE_COVERAGE`, `P_STORE_CHOICE`, `P_GROCERY_COVERAGE`, `P_GROCERY_TRACEABILITY`) re-enter at `grocery_builder`, while any meal-level failure re-enters at `meal_selector`. There is still no standalone substitution hop.
 
-Each subgraph has **private message history** — messages don't leak between subgraphs. Only structured state fields (nutrition_plan, selected_meals, grocery_list, etc.) pass between them via the top-level `PlannerState`.
+Each subgraph has **private message history** — messages don't leak between subgraphs. Only structured state fields (nutrition_plan, selected_meals, grocery_list, purchase_orders, etc.) pass between them via the top-level `PlannerState`.
 
 ### Memory & Context Management
 
@@ -402,17 +395,10 @@ CONTEXT_RULES = {
         "memory_top_k": 5,
         "token_budget": 4000,
     },
-    "planning_critic": {
+    "critic": {
         "include": ["artifact_under_review", "evidence", "validation_results"],
         "exclude": ["full_conversation_history", "other_subgraph_scratch"],
         "memory_query": None,  # Critic doesn't use episodic memory
-        "memory_top_k": 0,
-        "token_budget": 3000,
-    },
-    "shopping_critic": {
-        "include": ["artifact_under_review", "evidence", "validation_results"],
-        "exclude": ["full_conversation_history", "other_subgraph_scratch"],
-        "memory_query": None,
         "memory_top_k": 0,
         "token_budget": 3000,
     },
@@ -574,9 +560,7 @@ class PlannerState(TypedDict):
 
 def route_from_supervisor(state: PlannerState) -> str:
     current_phase = state.get("current_phase", "memory")
-    assert current_phase in {"memory", "planning", "shopping"}
-    if current_phase == "shopping":
-        return "shopping_subgraph"
+    assert current_phase in {"memory", "planning"}
     if current_phase == "planning":
         return "planning_subgraph"
     if state.get("replan_count", 0) > 0:
@@ -586,12 +570,8 @@ def route_from_supervisor(state: PlannerState) -> str:
 
 def route_from_critic(state: PlannerState, max_replans: int = 1) -> str:
     verdict = state["critic_verdict"]
-    current_phase = state.get("current_phase", "planning")
-    assert current_phase in {"planning", "shopping"}
-    if current_phase == "shopping":
-        return "end"
     if verdict["passed"]:
-        return "shopping_subgraph"
+        return "end"
     if state["replan_count"] >= max_replans:
         return "end"
     return "planning_subgraph"
@@ -711,7 +691,7 @@ FastAPI app with run-centric API, PostgreSQL, the planning subgraph (determinist
   - Shows most recent run status via `GET /v1/runs?user_id=...&limit=1`
 - `web/src/app/runs/[runId]/page.tsx` — **run detail page**:
   - Polls `GET /v1/runs/{run_id}` via TanStack Query (SSE streaming added in Phase 2)
-  - Shows phase stepper: planning (active) → shopping (locked) → checkout (locked)
+  - Shows phase stepper: planning (active) → checkout (locked)
   - Displays nutrition plan output: daily calories, protein/carbs/fat split
   - Macro breakdown as simple bar or donut chart (Recharts)
 - `web/src/components/run/phase-stepper.tsx` — visual step indicator, reused across phases
@@ -865,7 +845,7 @@ Qdrant-backed hybrid recipe search with reranking. MealSelector upgraded to a re
 **JD Coverage**: Tool calling, multi-step reasoning, deterministic services in agent pipelines
 
 ### Deliverable
-Deterministic grocery list builder that extracts ingredients, diffs against fridge, aggregates quantities, and categorizes. Shopping subgraph introduced.
+Deterministic grocery list builder that extracts ingredients, diffs against fridge, aggregates quantities, and categorizes. The unified planning subgraph expands to include grocery preparation.
 
 ### What to Build
 
@@ -891,12 +871,13 @@ Deterministic grocery list builder that extracts ingredients, diffs against frid
   - Writes `grocery_list` to state
   - No LLM call — this is pure code in a graph node
 
-**4. Shopping subgraph**
-- `src/shopper/agents/subgraphs/shopping.py` — `grocery_builder → price_optimizer` with private message history
+**4. Unified planning subgraph expansion**
+- `src/shopper/agents/subgraphs/planning.py` now continues past meal selection into `grocery_builder → price_optimizer`
+- Grocery and mock-store preparation are treated as part of the same upstream package as meal planning
 
 **5. Graph update**
-- Current flow: `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → shopping_subgraph → shopping_critic_subgraph → end`
-- Shopping worker nodes own deterministic grocery-building and pricing guards; the shopping critic runs once at the boundary after the full shopping subgraph
+- Current flow: `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → end`
+- Grocery-building and pricing stay deterministic worker steps inside the planning subgraph, and the single planning critic verifies the full pre-checkout artifact bundle
 
 **6. Evals (expanded)**
 - `src/shopper/evaluation/datasets/grocery_cases.json` — 15 meal plans with expected grocery lists
@@ -924,7 +905,7 @@ Deterministic grocery list builder that extracts ingredients, diffs against frid
   - Items marked `already_have` shown as struck-through with "In fridge" badge
   - Summary: total items needed, items already owned
 - Update `web/src/app/runs/[runId]/page.tsx`:
-  - After meal plan section, show grocery list section (appears when shopping phase completes)
+  - After meal plan section, show grocery list section (appears when upstream planning completes)
   - "Edit fridge" link → inventory page (so user can update before next run)
 - Add inventory link to nav
 
@@ -985,15 +966,14 @@ Price optimizer with parallel store queries (1 real + 2 mock), deterministic pri
 
 **5. Repair via existing worker + critic loop**
 - `src/shopper/agents/nodes/price_optimizer.py` writes `replan_reason` when the cheapest available basket is still incomplete or over budget
-- `src/shopper/agents/nodes/shopping_critic.py` turns final shopping failures into structured `repair_instructions`
-- No standalone `substitution.py` exists in the current repo; budget and availability issues stay inside the existing planning/shopping replan story
+- `src/shopper/agents/nodes/planning_critic.py` turns full-package upstream failures into structured `repair_instructions`
+- No standalone `substitution.py` exists in the current repo; budget and availability issues stay inside the unified planning replan story
 
 **6. Graph update**
-- Full shopping subgraph: `grocery_builder → price_optimizer`
-- Planning critic runs after the planning subgraph; shopping critic runs after the shopping subgraph
-- Planning failures route back through a bounded planning replan loop
-- Shopping failures currently end the run with structured `critic_verdict`, `repair_instructions`, and `replan_reason`
-- `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → shopping_subgraph → shopping_critic_subgraph → end`
+- Full planning subgraph: `nutrition_planner → meal_selector → grocery_builder → price_optimizer`
+- The planning critic runs after the full upstream artifact package is assembled
+- Planning failures route back through a bounded repair loop with targeted entry: fulfillment-only failures skip to `grocery_builder`, meal-level failures restart at `meal_selector`
+- `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → end`
 
 **7. Evals (expanded)**
 - `src/shopper/evaluation/datasets/price_cases.json` — 15 cases with mock quotes and expected optimization decisions
@@ -1020,7 +1000,7 @@ Price optimizer with parallel store queries (1 real + 2 mock), deterministic pri
   - Status badge per order: pending → approved → purchased
 - Update `web/src/app/runs/[runId]/page.tsx`:
   - After grocery list section, show price comparison + purchase orders
-  - Budget bar visible throughout shopping phase
+  - Budget bar visible throughout the planning workflow
   - During critic-driven replan/failure handling: show "Replanning..." indicator with reason
 
 **9. Tests**
@@ -1028,7 +1008,7 @@ Price optimizer with parallel store queries (1 real + 2 mock), deterministic pri
 - Unit: `budget_checker` catches over-budget scenarios
 - Unit: fan-out completes within timeout, handles partial adapter failures gracefully
 - Integration: full run with mock stores → optimized purchase orders
-- Integration: over-budget → shopping critic failure surfaces actionable `repair_instructions` / `replan_reason`
+- Integration: over-budget → planning critic failure surfaces actionable `repair_instructions` / `replan_reason`
 - Eval: `run_evals.py --eval price_optimality,safety` passes
 
 ### Key Learnings
@@ -1283,7 +1263,7 @@ Model routing for cost reduction, Redis caching, full observability dashboard vi
 
 **1. Model routing**
 - `src/shopper/agents/model_router.py`:
-  - High-stakes (planning/shopping critic review, groundedness) → Claude Sonnet
+  - High-stakes (planning critic review, groundedness) → Claude Sonnet
   - Medium (meal selection, price tradeoff) → Claude Sonnet
   - Simple (preference extraction from comments, formatting) → Claude Haiku
   - browser-use: uses its own model selection (optimize for vision tasks)
@@ -1303,7 +1283,7 @@ Model routing for cost reduction, Redis caching, full observability dashboard vi
 - SSE streaming: `GET /v1/runs/{run_id}/stream` streams agent progress events
 - Parallel store queries already in Phase 4 — measure and optimize
 - Profile end-to-end: identify bottleneck nodes, optimize slowest ones
-- Target: planning phase < 20s, shopping phase < 15s per store
+- Target: upstream planning < 20s, store quote fan-out < 15s per store
 
 **4. Comprehensive eval dataset**
 - Expand all datasets to 100-150 total scenarios

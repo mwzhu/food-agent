@@ -1,15 +1,15 @@
 # Shopper
 
-Phase 1 of the AI meal planner and grocery shopping agent is implemented here.
+The current repo implements the upstream planning workflow for the AI meal planner and grocery shopping agent.
 
-This repository now matches the Phase 1 plan in `PLAN.md`:
+Today’s backend architecture is:
 
 - FastAPI app with run-centric `POST /v1/runs` and `GET /v1/runs/{run_id}`
-- packaged SQLAlchemy models and Pydantic schemas
-- LangGraph planning flow with `supervisor -> planning_subgraph -> end`
-- deterministic nutrition math plus a prompt-driven Phase 1 meal-selector stub
-- memory/context scaffolding with LangSmith-friendly context metadata
-- initial nutrition evaluation harness and CLI
+- LangGraph flow with `supervisor -> load_memory -> planning_subgraph -> planning_critic_subgraph -> end`
+- unified upstream planning subgraph: `nutrition_planner -> meal_selector -> grocery_builder -> price_optimizer`
+- one bounded repair loop driven by the `critic`
+- deterministic validation for nutrition, safety, grocery traceability, purchase-order coverage, and budget fit
+- memory/context scaffolding with LangSmith-friendly context metadata and evaluation harnesses
 
 The app runs fully offline by default. Local runs still get a local trace ID,
 and remote LangSmith tracing turns on when `LANGSMITH_TRACING`,

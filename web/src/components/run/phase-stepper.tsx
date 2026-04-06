@@ -11,13 +11,12 @@ type PhaseStepperProps = {
 
 const PHASES = [
   { key: "planning", label: "Planning" },
-  { key: "shopping", label: "Shopping" },
   { key: "checkout", label: "Checkout" },
 ] as const;
 
 export function PhaseStepper({ runStatus, currentPhase, phaseStatuses }: PhaseStepperProps) {
   return (
-    <div className="grid gap-3 md:grid-cols-3" aria-label="Run progress">
+    <div className="grid gap-3 md:grid-cols-2" aria-label="Run progress">
       {PHASES.map((phase, index) => {
         const state = phaseStatuses[phase.key];
         const isCurrent = currentPhase === phase.key || (phase.key === "planning" && currentPhase === "memory");

@@ -25,8 +25,6 @@ NodeName = Literal[
     "meal_selector",
     "price_optimizer",
     "critic",
-    "planning_critic",
-    "shopping_critic",
 ]
 
 
@@ -83,7 +81,7 @@ class ContextAssembler:
                 }
                 payload["replan_attempt"] = state.get("replan_count", 0)
             token_budget = 3200
-        elif node_name in {"critic", "planning_critic"}:
+        elif node_name == "critic":
             nutrition_plan = NutritionPlan.model_validate(state["nutrition_plan"])
             meals = [MealSlot.model_validate(meal) for meal in state["selected_meals"]]
             memories = []
@@ -95,7 +93,58 @@ class ContextAssembler:
                 "allergies": profile["allergies"],
                 "dietary_restrictions": profile["dietary_restrictions"],
             }
-            token_budget = 2200
+            if state.get("grocery_list"):
+                grocery_list = [GroceryItem.model_validate(item) for item in state["grocery_list"]]
+                payload["grocery_list"] = [
+                    {
+                        "name": item.name,
+                        "quantity": item.quantity,
+                        "shopping_quantity": item.shopping_quantity,
+                        "unit": item.unit,
+                        "category": item.category,
+                        "already_have": item.already_have,
+                        "quantity_in_fridge": item.quantity_in_fridge,
+                        "source_recipe_ids": item.source_recipe_ids,
+                    }
+                    for item in grocery_list
+                ]
+            if state.get("fridge_inventory"):
+                fridge_inventory = [FridgeItemSnapshot.model_validate(item) for item in state["fridge_inventory"]]
+                payload["fridge_inventory"] = self._compact_fridge_inventory(fridge_inventory)
+            if state.get("store_summaries"):
+                store_summaries = [StoreSummary.model_validate(item) for item in state["store_summaries"]]
+                payload["store_summaries"] = [
+                    {
+                        "store": summary.store,
+                        "subtotal": summary.subtotal,
+                        "delivery_fee": summary.delivery_fee,
+                        "total": summary.total,
+                        "min_order": summary.min_order,
+                        "all_items_available": summary.all_items_available,
+                    }
+                    for summary in store_summaries
+                ]
+            if state.get("purchase_orders"):
+                purchase_orders = [PurchaseOrder.model_validate(item) for item in state["purchase_orders"]]
+                payload["purchase_orders"] = [
+                    {
+                        "store": order.store,
+                        "channel": order.channel,
+                        "total_cost": order.total_cost,
+                        "item_count": len(order.items),
+                    }
+                    for order in purchase_orders
+                ]
+            if state.get("budget_summary") is not None:
+                budget_summary = BudgetSummary.model_validate(state["budget_summary"])
+                payload["budget_summary"] = budget_summary.model_dump(mode="json")
+            if state.get("price_strategy"):
+                payload["price_strategy"] = state["price_strategy"]
+            if state.get("price_rationale"):
+                payload["price_rationale"] = self._trim_string(str(state["price_rationale"]), limit=200)
+            if state.get("replan_reason"):
+                payload["replan_reason"] = self._trim_string(str(state["replan_reason"]), limit=200)
+            token_budget = 2800
         elif node_name == "price_optimizer":
             grocery_list = [GroceryItem.model_validate(item) for item in state["grocery_list"]]
             memories = []
@@ -126,46 +175,6 @@ class ContextAssembler:
                     for summary in store_summaries
                 ]
             token_budget = 1800
-        elif node_name == "shopping_critic":
-            meals = [MealSlot.model_validate(meal) for meal in state["selected_meals"]]
-            memories = []
-            payload = {
-                "user_profile_summary": self._profile_summary(profile),
-                "selected_meals": self._compact_meals(meals),
-            }
-            if state.get("grocery_list"):
-                grocery_list = [GroceryItem.model_validate(item) for item in state["grocery_list"]]
-                payload["grocery_list"] = [
-                    {
-                        "name": item.name,
-                        "quantity": item.quantity,
-                        "shopping_quantity": item.shopping_quantity,
-                        "unit": item.unit,
-                        "category": item.category,
-                        "already_have": item.already_have,
-                        "quantity_in_fridge": item.quantity_in_fridge,
-                        "source_recipe_ids": item.source_recipe_ids,
-                    }
-                    for item in grocery_list
-                ]
-            if state.get("fridge_inventory"):
-                fridge_inventory = [FridgeItemSnapshot.model_validate(item) for item in state["fridge_inventory"]]
-                payload["fridge_inventory"] = self._compact_fridge_inventory(fridge_inventory)
-            if state.get("purchase_orders"):
-                purchase_orders = [PurchaseOrder.model_validate(item) for item in state["purchase_orders"]]
-                payload["purchase_orders"] = [
-                    {
-                        "store": order.store,
-                        "channel": order.channel,
-                        "total_cost": order.total_cost,
-                        "item_count": len(order.items),
-                    }
-                    for order in purchase_orders
-                ]
-            if state.get("budget_summary") is not None:
-                budget_summary = BudgetSummary.model_validate(state["budget_summary"])
-                payload["budget_summary"] = budget_summary.model_dump(mode="json")
-            token_budget = 2200
         else:
             assert False, node_name
 
@@ -299,6 +308,20 @@ class ContextAssembler:
             trimmed_payload["fridge_inventory"] = current_fridge_inventory
             if "fridge_inventory" not in dropped_fields:
                 dropped_fields.append("fridge_inventory")
+
+        while self._estimate_tokens(trimmed_payload) > token_budget and trimmed_payload.get("purchase_orders"):
+            current_purchase_orders = list(trimmed_payload["purchase_orders"])
+            current_purchase_orders.pop()
+            trimmed_payload["purchase_orders"] = current_purchase_orders
+            if "purchase_orders" not in dropped_fields:
+                dropped_fields.append("purchase_orders")
+
+        while self._estimate_tokens(trimmed_payload) > token_budget and trimmed_payload.get("store_summaries"):
+            current_store_summaries = list(trimmed_payload["store_summaries"])
+            current_store_summaries.pop()
+            trimmed_payload["store_summaries"] = current_store_summaries
+            if "store_summaries" not in dropped_fields:
+                dropped_fields.append("store_summaries")
 
         for field_name in ("preference_summary", "schedule", "dietary_restrictions", "allergies"):
             if self._estimate_tokens(trimmed_payload) <= token_budget:
