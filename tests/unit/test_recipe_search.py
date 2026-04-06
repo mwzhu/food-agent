@@ -78,6 +78,7 @@ def test_recipe_search_falls_back_to_in_memory_when_qdrant_is_unset(tmp_path):
     settings = Settings(
         SHOPPER_APP_ENV="test",
         SHOPPER_EMBEDDING_PROVIDER="local",
+        SHOPPER_QDRANT_URL="",
         LANGSMITH_TRACING=False,
     )
     store = QdrantRecipeStore(

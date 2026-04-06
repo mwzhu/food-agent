@@ -4,7 +4,16 @@ import asyncio
 
 from shopper.agents.nodes.shopping_critic import ShoppingCriticNode
 from shopper.memory import AssembledContext, ContextBudget
-from shopper.schemas import FridgeItemSnapshot, GroceryItem, MealSlot, RecipeIngredient, RecipeRecord
+from shopper.schemas import (
+    BudgetSummary,
+    FridgeItemSnapshot,
+    GroceryItem,
+    MealSlot,
+    PurchaseOrder,
+    PurchaseOrderItem,
+    RecipeIngredient,
+    RecipeRecord,
+)
 
 
 class FakeContextAssembler:
@@ -23,6 +32,8 @@ class FakeContextAssembler:
                 fields_dropped=[],
             ),
         )
+
+
 class FakeStructuredModel:
     def __init__(self, schema, response, calls):
         self.schema = schema
@@ -113,6 +124,43 @@ def test_shopping_critic_includes_llm_findings_on_valid_grocery_list():
         }
     )
     node = ShoppingCriticNode(context_assembler=FakeContextAssembler(), chat_model=chat_model)
+    purchase_orders = [
+        PurchaseOrder(
+            store="Walmart",
+            items=[
+                PurchaseOrderItem(
+                    name="chicken breast",
+                    quantity=5.0,
+                    unit="oz",
+                    category="meat",
+                    source_recipe_ids=[recipe.recipe_id],
+                    price=6.0,
+                    unit_price=1.2,
+                ),
+                PurchaseOrderItem(
+                    name="rice",
+                    quantity=1.0,
+                    unit="cup",
+                    category="pantry",
+                    source_recipe_ids=[recipe.recipe_id],
+                    price=2.5,
+                    unit_price=2.5,
+                ),
+            ],
+            subtotal=8.5,
+            delivery_fee=0.0,
+            total_cost=8.5,
+            channel="in_store",
+            status="pending",
+        )
+    ]
+    budget_summary = BudgetSummary(
+        budget=135.0,
+        total_cost=8.5,
+        overage=0.0,
+        within_budget=True,
+        utilization=0.06,
+    )
 
     result = asyncio.run(
         node(
@@ -145,6 +193,8 @@ def test_shopping_critic_includes_llm_findings_on_valid_grocery_list():
                         expiry_date=None,
                     ).model_dump(mode="json")
                 ],
+                "purchase_orders": [order.model_dump(mode="json") for order in purchase_orders],
+                "budget_summary": budget_summary.model_dump(mode="json"),
             }
         )
     )
@@ -154,3 +204,73 @@ def test_shopping_critic_includes_llm_findings_on_valid_grocery_list():
     assert "Quantities look a little tight if leftovers matter." in verdict["warnings"]
     assert any(finding["code"] == "S_LLM_REVIEW" for finding in verdict["findings"])
     assert chat_model.calls
+
+
+def test_shopping_critic_blocks_missing_purchase_order_coverage():
+    recipe = _recipe()
+    meal = MealSlot(
+        day="monday",
+        meal_type="dinner",
+        recipe_id=recipe.recipe_id,
+        recipe_name=recipe.name,
+        cuisine=recipe.cuisine,
+        prep_time_min=recipe.prep_time_min,
+        serving_multiplier=1.0,
+        calories=recipe.calories,
+        protein_g=recipe.protein_g,
+        carbs_g=recipe.carbs_g,
+        fat_g=recipe.fat_g,
+        tags=recipe.tags,
+        macro_fit_score=0.94,
+        recipe=recipe,
+    )
+    grocery_list = [
+        GroceryItem(
+            name="chicken breast",
+            quantity=5.0,
+            unit="oz",
+            category="meat",
+            already_have=False,
+            shopping_quantity=5.0,
+            quantity_in_fridge=0.0,
+            source_recipe_ids=[recipe.recipe_id],
+        )
+    ]
+    node = ShoppingCriticNode(context_assembler=FakeContextAssembler(), chat_model=None)
+
+    result = asyncio.run(
+        node(
+            {
+                "run_id": "shopping-critic-run",
+                "user_profile": {
+                    "age": 30,
+                    "weight_lbs": 170,
+                    "height_in": 69,
+                    "sex": "male",
+                    "activity_level": "lightly_active",
+                    "goal": "maintain",
+                    "dietary_restrictions": [],
+                    "allergies": [],
+                    "budget_weekly": 135,
+                    "household_size": 1,
+                    "cooking_skill": "intermediate",
+                    "schedule_json": {"weekdays": "quick"},
+                },
+                "selected_meals": [meal.model_dump(mode="json")],
+                "grocery_list": [item.model_dump(mode="json") for item in grocery_list],
+                "purchase_orders": [],
+                "budget_summary": {
+                    "budget": 135.0,
+                    "total_cost": 0.0,
+                    "overage": 0.0,
+                    "within_budget": True,
+                    "utilization": 0.0,
+                },
+            }
+        )
+    )
+
+    verdict = result["critic_verdict"]
+    assert verdict["passed"] is False
+    assert "Missing purchase order coverage for 'chicken breast'." in verdict["issues"]
+    assert any(finding["code"] == "S_PRICE_COVERAGE" for finding in verdict["findings"])

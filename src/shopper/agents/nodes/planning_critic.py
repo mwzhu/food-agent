@@ -15,10 +15,7 @@ from shopper.retrieval import QdrantRecipeStore
 from shopper.schemas import ContextMetadata, CriticFinding, CriticVerdict, MealSlot, NutritionPlan
 from shopper.validators import (
     validate_daily_macro_alignment,
-    validate_meal_plan_safety,
     validate_meal_plan_schedule_fit,
-    validate_meal_plan_slot_coverage,
-    validate_nutrition_plan,
 )
 
 
@@ -37,18 +34,15 @@ class PlanningCriticNode:
             event_type="node_entered",
             phase="planning",
             node_name="critic",
-            message="Reviewing plan coverage, macro alignment, safety, and groundedness.",
+            message="Reviewing week-level macro alignment, groundedness, and variety.",
         )
 
         context = await self.context_assembler.build_context("planning_critic", state)
         nutrition_plan = NutritionPlan.model_validate(state["nutrition_plan"])
         meals = [MealSlot.model_validate(item) for item in state["selected_meals"]]
-        user_profile = state["user_profile"]
 
         findings = dedupe_findings(
             [
-                *build_findings("P_PLAN_INVALID", validate_nutrition_plan(nutrition_plan), severity="issue"),
-                *build_findings("P_SLOT_COVERAGE", validate_meal_plan_slot_coverage(meals), severity="issue"),
                 *build_findings(
                     "P_MACRO_MISS",
                     validate_daily_macro_alignment(nutrition_plan, meals, "critic_blockers"),
@@ -59,15 +53,10 @@ class PlanningCriticNode:
                     validate_daily_macro_alignment(nutrition_plan, meals, "critic_warnings"),
                     severity="warning",
                 ),
-                *build_findings(
-                    "P_SAFETY",
-                    validate_meal_plan_safety(meals, user_profile["allergies"]),
-                    severity="issue",
-                ),
                 *build_findings("P_GROUNDEDNESS", self._groundedness_issues(meals), severity="issue"),
                 *build_findings(
                     "P_SCHEDULE",
-                    validate_meal_plan_schedule_fit(meals, user_profile["schedule_json"]),
+                    validate_meal_plan_schedule_fit(meals, state["user_profile"]["schedule_json"]),
                     severity="issue",
                 ),
                 *build_findings("P_VARIETY", self._variety_warnings(meals), severity="warning"),
@@ -238,13 +227,9 @@ class PlanningCriticNode:
     def _repair_instructions(self, findings: List[CriticFinding]) -> List[str]:
         codes = {finding.code for finding in findings if finding.severity == "issue"}
         instructions: List[str] = []
-        if "P_SLOT_COVERAGE" in codes:
-            instructions.append("Fill every missing meal slot exactly once before handing off to shopping.")
-        if "P_SAFETY" in codes:
-            instructions.append("Replace any meal containing a flagged allergen before finalizing the plan.")
         if "P_GROUNDEDNESS" in codes:
             instructions.append("Select only recipes that resolve from the recipe store and keep nutrition grounded to recipe evidence.")
-        if "P_MACRO_MISS" in codes or "P_PLAN_INVALID" in codes:
+        if "P_MACRO_MISS" in codes:
             instructions.append("Rebalance the affected days so the selected meals match the daily calorie and macro targets.")
         if "P_SCHEDULE" in codes:
             instructions.append("Swap meals that exceed weekday or weekend prep limits for faster alternatives.")

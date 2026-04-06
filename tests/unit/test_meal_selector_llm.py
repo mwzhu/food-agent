@@ -16,6 +16,12 @@ class FakeRecipeSearchTool:
         slot_index = len(self.calls)
         meal_type = filters["meal_type"]
         cuisine = "thai" if "thai" in query else "american"
+        prep_time_min = {
+            "breakfast": 12,
+            "lunch": 18,
+            "dinner": 20,
+            "snack": 8,
+        }[meal_type]
         self.calls.append({"query": query, "filters": filters, "context": context})
         return [
             {
@@ -26,6 +32,7 @@ class FakeRecipeSearchTool:
                     calories=520 - (candidate_index * 10),
                     protein_g=35 + candidate_index,
                     meal_type=meal_type,
+                    prep_time_min=prep_time_min,
                 ).model_dump(mode="json"),
                 "rerank_score": round(0.98 - (candidate_index * 0.03), 2),
                 "reasons": ["top rank" if candidate_index == 0 else "alternate fit"],
@@ -76,6 +83,7 @@ def _recipe(
     calories: int,
     protein_g: int,
     meal_type: str = "lunch",
+    prep_time_min: int = 20,
 ) -> RecipeRecord:
     return RecipeRecord(
         recipe_id=recipe_id,
@@ -83,7 +91,7 @@ def _recipe(
         cuisine=cuisine,
         meal_types=[meal_type],
         ingredients=[RecipeIngredient(name="chicken breast"), RecipeIngredient(name="rice")],
-        prep_time_min=20,
+        prep_time_min=prep_time_min,
         calories=calories,
         protein_g=protein_g,
         carbs_g=30,

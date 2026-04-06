@@ -6,13 +6,26 @@ Build a production-quality multi-agent system that plans meals, optimizes grocer
 
 ### Design Principles
 
-1. **Selective agentization**: Not everything is an agent. TDEE math is code. Ingredient aggregation is code. Meal selection with tradeoffs is an agent. Substitution reasoning is an agent.
+1. **Selective agentization**: Not everything is an agent. TDEE math is code. Ingredient aggregation is code. Meal selection with tradeoffs is an agent. Repair happens through critic feedback and bounded replanning, not a standalone substitution agent.
 2. **Evals from day 1**: Every phase ships with its evaluators. The eval harness is not a late-stage add-on.
 3. **Bounded autonomy**: LLM-powered browser agent for flexible navigation, deterministic verification gates for correctness, human approval before irreversible actions.
 4. **Run-centric, not CRUD-centric**: The API models graph execution runs, not individual resources.
 5. **Custom orchestration**: Hand-built supervisor and subgraphs, not `langgraph-supervisor` abstractions.
 6. **Memory as a first-class subsystem**: Four distinct memory layers (short-term run state, long-term canonical facts, episodic memories, procedural prompts/policies) with explicit context assembly per node — no raw state dumps into prompts.
 7. **Frontend as the trust layer**: The UI makes agent behavior transparent — live progress streaming, verification results before approval, learned preferences the user can inspect and correct. Built alongside each backend phase, not bolted on later.
+
+### Status Note
+
+This plan includes phase-by-phase milestone notes. When those historical snapshots differ from the current repo, the **Current Architecture** section below is the source of truth for today's implementation.
+
+### Current Architecture
+
+- Top-level graph: `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → shopping_subgraph → shopping_critic_subgraph → end`
+- Planning worker path: `nutrition_planner` does deterministic macro-target calculation plus a narrow nutrition-plan validator; `meal_selector` does whole-week recipe selection and then runs deterministic slot-coverage and safety guards before returning.
+- Planning boundary critic: `PlanningCriticNode` runs once after the planning subgraph, combines deterministic week-level checks (macro alignment, groundedness, variety heuristics) with optional LLM review, and on failure routes back through a bounded planning replan loop with structured `repair_instructions`.
+- Shopping worker path: `grocery_builder` deterministically aggregates ingredients, diffs against fridge inventory, and validates the derived grocery list; `price_optimizer` fans out to store adapters, applies deterministic ranking and budget guards, and optionally uses an LLM only for final tradeoff selection.
+- Shopping boundary critic: `ShoppingCriticNode` runs once after the shopping subgraph, checks final purchase-order coverage and budget fit, adds optional LLM review, and surfaces structured `repair_instructions` plus `replan_reason` on failure.
+- There is no dedicated substitution node in the current repo. Cost or availability problems are represented as critic feedback and replan reasons inside the existing worker/critic orchestration.
 
 ---
 
@@ -156,17 +169,18 @@ shopper/
 │   │   │   ├── __init__.py
 │   │   │   ├── planning.py           # Planning subgraph (nutrition + meal selection)
 │   │   │   ├── shopping.py           # Shopping subgraph (grocery list + price optimization)
-│   │   │   ├── checkout.py           # Checkout subgraph (browser agent + purchase)
-│   │   │   └── critic.py             # Critic/verification subgraph
+│   │   │   ├── critic.py             # Boundary critic subgraphs for planning + shopping
+│   │   │   └── checkout.py           # Planned future phase
 │   │   ├── nodes/
 │   │   │   ├── __init__.py
 │   │   │   ├── nutrition_planner.py  # Deterministic TDEE + LLM for edge cases
-│   │   │   ├── meal_selector.py      # LLM agent — retrieval + reasoning
-│   │   │   ├── grocery_builder.py    # Deterministic — diff, aggregate, categorize
-│   │   │   ├── price_optimizer.py    # Deterministic ranking + LLM for tradeoff decisions
-│   │   │   ├── purchase_executor.py  # browser-use agent + verification gates
-│   │   │   ├── substitution.py       # LLM agent — creative reasoning for swaps
-│   │   │   └── feedback_processor.py # Deterministic aggregation + LLM preference extraction
+│   │   │   ├── meal_selector.py      # Whole-week LLM planner + deterministic output guards
+│   │   │   ├── planning_critic.py    # Planning boundary critic
+│   │   │   ├── grocery_builder.py    # Deterministic aggregation/diff + grocery validators
+│   │   │   ├── price_optimizer.py    # Deterministic ranking + LLM tradeoff decisions
+│   │   │   ├── shopping_critic.py    # Shopping boundary critic
+│   │   │   ├── purchase_executor.py  # Planned future phase
+│   │   │   └── feedback_processor.py # Planned future phase
 │   │   └── tools/
 │   │       ├── __init__.py
 │   │       ├── nutrition_lookup.py   # USDA FoodData Central API
@@ -195,10 +209,9 @@ shopper/
 │   │   └── seed.py                   # Recipe DB seeding from real dataset
 │   ├── prompts/
 │   │   ├── meal_selector.md
-│   │   ├── price_tradeoff.md         # Online vs in-store decision prompt
-│   │   ├── substitution.md
-│   │   ├── critic.md
-│   │   └── supervisor_fallback.md    # Only used when deterministic routing can't decide
+│   │   ├── planning_critic.md
+│   │   ├── shopping_critic.md
+│   │   └── price_tradeoff.md         # Online vs in-store decision prompt
 │   ├── evaluation/
 │   │   ├── __init__.py
 │   │   ├── runner.py                 # Eval orchestrator
@@ -249,8 +262,8 @@ shopper/
 | Quantity aggregation + fridge diff | **Deterministic** service | Math + set operations |
 | Price comparison ranking | **Deterministic** service | Cheapest is cheapest — pure sort |
 | Online vs. in-store split | **LLM-assisted decision** | Multi-factor tradeoff (fees, time value, preferences) |
-| Substitution on constraint violation | **LLM agent** | Creative reasoning for nutritionally equivalent swaps |
-| Critic / verification | **Mostly deterministic** + LLM groundedness check | Budget math is code; "is this plan reasonable?" is LLM |
+| Critic-directed repair / replanning | **Structured routing** | Repairs reuse the existing worker subgraphs instead of a dedicated substitution node |
+| Critic / verification | **Boundary deterministic checks** + optional LLM review | Worker nodes own narrow guards; critics review subgraph outputs once at the boundary |
 | Browser cart building | **LLM agent** (browser-use) | Dynamic UI navigation |
 | Cart state verification | **Deterministic** validator | SKU match, quantity, subtotal — must be exact |
 
@@ -258,83 +271,27 @@ shopper/
 
 ```
 User Request
-     │
-     ▼
-┌─────────────────────────────────────────────────┐
-│                  SUPERVISOR                       │
-│  (deterministic routing on happy path,            │
-│   LLM fallback for ambiguous/replan scenarios)    │
-└────────┬──────────┬──────────┬──────────┬────────┘
-         │          │          │          │
-         ▼          │          │          │
-┌─────────────┐     │          │          │
-│  PLANNING   │     │          │          │
-│  SUBGRAPH   │     │          │          │
-│             │     │          │          │
-│ ┌─────────┐ │     │          │          │
-│ │Nutrition│ │     │          │          │
-│ │Planner  │ │     │          │          │
-│ │(service │ │     │          │          │
-│ │+ LLM    │ │     │          │          │
-│ │ edges)  │ │     │          │          │
-│ └────┬────┘ │     │          │          │
-│      ▼      │     │          │          │
-│ ┌─────────┐ │     │          │          │
-│ │  Meal   │ │     │          │          │
-│ │Selector │ │     │          │          │
-│ │(agent)  │ │     │          │          │
-│ └─────────┘ │     │          │          │
-└──────┬──────┘     │          │          │
-       │            ▼          │          │
-       │     ┌────────────┐    │          │
-       │     │  CRITIC    │    │          │
-       │     │  SUBGRAPH  │    │          │
-       ├────▶│            │    │          │
-       │     │ Validators │    │          │
-       │     │ + LLM      │    │          │
-       │     │ groundedness│   │          │
-       │     └─────┬──────┘    │          │
-       │           │ pass/fail │          │
-       │           ▼           ▼          │
-       │    ┌─────────────────────┐       │
-       │    │  SHOPPING SUBGRAPH  │       │
-       │    │                     │       │
-       │    │ ┌─────────────────┐ │       │
-       │    │ │ Grocery Builder │ │       │
-       │    │ │ (deterministic) │ │       │
-       │    │ └────────┬────────┘ │       │
-       │    │          ▼          │       │
-       │    │ ┌─────────────────┐ │       │
-       │    │ │Price Optimizer  │ │       │
-       │    │ │(det. ranking +  │ │       │
-       │    │ │ LLM tradeoffs)  │ │       │
-       │    │ └─────────────────┘ │       │
-       │    └──────────┬──────────┘       │
-       │               │                  │
-       │               ├──▶ CRITIC ──┐    │
-       │               │             │    │
-       │               ▼             │    ▼
-       │    ┌──────────────────────────────────┐
-       │    │      CHECKOUT SUBGRAPH           │
-       │    │                                  │
-       │    │ browser-use agent (cart building) │
-       │    │        ▼                         │
-       │    │ Cart Verifier (deterministic)     │
-       │    │        ▼                         │
-       │    │ ══ INTERRUPT: Human Approval ══  │
-       │    │        ▼                         │
-       │    │ Checkout Executor                │
-       │    │        ▼                         │
-       │    │ Post-Checkout Verifier            │
-       │    └──────────────────────────────────┘
-       │
-       │  (on failure/rejection at any critic gate)
-       │            ▼
-       │    ┌──────────────┐
-       └───▶│ Substitution │ ──▶ back to Supervisor
-            │   (agent)    │     (max 3 replan loops)
-            └──────────────┘
+  -> supervisor
+  -> load_memory
+  -> planning_subgraph
+       nutrition_planner
+       meal_selector
+  -> planning_critic_subgraph
+       planning_critic
+       on failure: structured repair_instructions -> planning_subgraph (bounded replan)
+  -> shopping_subgraph
+       grocery_builder
+       price_optimizer
+  -> shopping_critic_subgraph
+       shopping_critic
+       on failure: structured repair_instructions + replan_reason -> end failed
+  -> end
 ```
+
+- Worker nodes and subgraphs produce the artifacts for that phase.
+- Deterministic validators do narrow checks inside the worker steps that own the data.
+- Each phase has exactly one critic at the subgraph boundary.
+- The current bounded repair loop exists on the planning boundary; shopping failures are surfaced through critic feedback and `replan_reason` without a standalone substitution hop.
 
 Each subgraph has **private message history** — messages don't leak between subgraphs. Only structured state fields (nutrition_plan, selected_meals, grocery_list, etc.) pass between them via the top-level `PlannerState`.
 
@@ -346,21 +303,21 @@ Each subgraph has **private message history** — messages don't leak between su
 |---|---|---|---|
 | **Short-term (run)** | LangGraph checkpoints (`AsyncPostgresSaver`) | Current run state, subgraph scratch, interrupt payloads | Single run (persisted for resume/replay) |
 | **Long-term canonical** | PostgreSQL (`UserProfile` + `UserPreferenceSummary`) | Stable facts: allergies, budget rules, household size, derived preference summary | Indefinite, updated via distillation |
-| **Long-term episodic** | LangGraph Store (namespaced by `(user_id, category)`) | Feedback events, accepted/rejected substitutions, recurring dislikes, successful baskets | Indefinite, semantically searchable |
+| **Long-term episodic** | LangGraph Store (namespaced by `(user_id, category)`) | Feedback events, accepted/rejected replans, recurring dislikes, successful baskets | Indefinite, semantically searchable |
 | **Procedural** | Version-controlled files in `prompts/` | Prompt templates, validation policies, store playbooks | Tied to code version (git) |
 
 #### Why This Split (Not Everything in Qdrant)
 
 - **Canonical facts** (allergies, household size) must be deterministically checked, not found via cosine similarity. "Allergic to peanuts" is a Postgres column checked by `safety_validator`, not an embedded text blob.
-- **Episodic memories** ("loved the Thai basil chicken", "rejected the salmon substitution") benefit from semantic search — you want to retrieve *relevant* memories, not all memories. LangGraph Store supports namespaced semantic search natively.
-- **Qdrant stays focused on recipe/substitution retrieval** — its core job. Don't overload it as a general memory store.
+- **Episodic memories** ("loved the Thai basil chicken", "rejected the last budget-driven replan") benefit from semantic search — you want to retrieve *relevant* memories, not all memories. LangGraph Store supports namespaced semantic search natively.
+- **Qdrant stays focused on recipe retrieval and recipe-level alternatives** — its core job. Don't overload it as a general memory store.
 - **Procedural memory** is just versioned prompts and policies. No need for a memory system — git history + LangSmith experiments handle version comparison.
 
 #### Memory Write Policy
 
 Only write durable memories from **trusted signals**:
 - Explicit user feedback (ratings, comments, "never again")
-- Accepted/rejected substitutions
+- Accepted/rejected replans or cheaper-plan alternatives
 - Repeated cart edits (user keeps removing an item → signal)
 - Completed purchase outcomes
 - **Never** store raw chain-of-thought or model reasoning as memory
@@ -387,7 +344,8 @@ class MemoryStore:
         self, user_id: str, category: str, content: str, metadata: dict
     ) -> str:
         """Write an episodic memory. Categories: 'meal_feedback', 'store_behavior',
-        'substitution_decisions', 'general_preferences'."""
+        'substitution_decisions' (reserved for future/manual swap feedback),
+        'general_preferences'."""
         namespace = (user_id, category)
         # store.put with semantic embedding for later retrieval
         ...
@@ -444,19 +402,17 @@ CONTEXT_RULES = {
         "memory_top_k": 5,
         "token_budget": 4000,
     },
-    "substitution": {
-        "include": ["constraint_violation", "current_plan", "nutrition_plan",
-                     "dietary_restrictions", "budget_remaining",
-                     "top_k_memories"],
-        "exclude": ["cart_state", "store_quotes", "audit_log"],
-        "memory_query": "ingredient preferences and past substitution decisions",
-        "memory_top_k": 8,
-        "token_budget": 5000,
-    },
-    "critic": {
+    "planning_critic": {
         "include": ["artifact_under_review", "evidence", "validation_results"],
         "exclude": ["full_conversation_history", "other_subgraph_scratch"],
         "memory_query": None,  # Critic doesn't use episodic memory
+        "memory_top_k": 0,
+        "token_budget": 3000,
+    },
+    "shopping_critic": {
+        "include": ["artifact_under_review", "evidence", "validation_results"],
+        "exclude": ["full_conversation_history", "other_subgraph_scratch"],
+        "memory_query": None,
         "memory_top_k": 0,
         "token_budget": 3000,
     },
@@ -482,7 +438,7 @@ class PreferenceDistiller:
 
     async def distill(self, user_id: str) -> UserPreferenceSummary:
         """
-        1. Load all episodic memories for user (meal_feedback, substitution_decisions)
+        1. Load all episodic memories for user (meal_feedback, store_behavior, substitution_decisions for future/manual swap feedback)
         2. Compute derived preferences:
            - cuisine_affinities: {"mediterranean": 0.8, "italian": 0.3, ...}
            - ingredient_aversions: ["cilantro", "tofu"]
@@ -569,9 +525,10 @@ class PurchaseOrder(TypedDict):
 
 class CriticVerdict(TypedDict):
     passed: bool
-    phase: str                 # "planning", "shopping", "checkout"
-    issues: list[str]          # What failed
-    repair_instructions: str   # Structured guidance for replanning
+    issues: list[str]
+    warnings: list[str]
+    repair_instructions: list[str]
+    findings: list[dict]
 
 class PlannerState(TypedDict):
     # Run metadata
@@ -583,29 +540,31 @@ class PlannerState(TypedDict):
     nutrition_plan: NutritionPlan | None
     selected_meals: list[MealSlot]
     grocery_list: list[GroceryItem]
+    store_quotes: list[StoreQuote]
+    store_summaries: list[StoreSummary]
     purchase_orders: list[PurchaseOrder]
+    budget_summary: BudgetSummary | None
     fridge_inventory: list[dict]
 
-    # Critic state
-    critic_verdicts: Annotated[list[CriticVerdict], operator.add]
+    # Critic + repair state
+    critic_verdict: CriticVerdict | None
+    repair_instructions: list[str]
+    blocked_recipe_ids: list[str]
+    avoid_cuisines: list[str]
 
     # Control flow
     current_phase: str
-    replan_count: int          # Hard cap at 3
+    replan_count: int
     replan_reason: str | None
-    human_approved: bool | None
-
-    # Browser checkout state
-    cart_verified: bool
-    cart_screenshot_path: str | None
-
-    # Error tracking (append-only)
-    errors: Annotated[list[str], operator.add]
+    price_strategy: str | None
+    price_rationale: str | None
+    latest_error: str | None
 
     # Memory context (loaded at run start, used by ContextAssembler)
     user_preferences_learned: dict    # Derived summary from Postgres (distiller output)
     retrieved_memories: list[dict]    # Episodic memories retrieved for this run
-    context_metadata: dict            # Observability: tokens used, memories retrieved, items dropped per node
+    context_metadata: list[dict]      # Observability: tokens used, memories retrieved, items dropped per node
+    trace_metadata: dict
 ```
 
 ### Supervisor Routing Logic
@@ -614,48 +573,28 @@ class PlannerState(TypedDict):
 # src/shopper/agents/supervisor.py
 
 def route_from_supervisor(state: PlannerState) -> str:
-    """Deterministic routing on happy path. LLM fallback for edge cases only."""
-
-    # First entry: load memory before anything else
-    if not state.get("user_preferences_learned"):
-        return "load_memory"  # Loads canonical prefs from Postgres + episodic from Store
-
-    # Check replan cap
-    if state.get("replan_count", 0) >= 3:
-        return "end_with_best_effort"
-
-    # Check latest critic verdict
-    verdicts = state.get("critic_verdicts", [])
-    if verdicts and not verdicts[-1]["passed"]:
-        return "substitution"
-
-    # Happy path: route to next incomplete phase
-    if not state.get("nutrition_plan"):
-        return "planning_subgraph"
-    if not state.get("selected_meals"):
-        return "planning_subgraph"
-
-    # Planning done — run critic if not yet verified
-    if not _phase_verified(verdicts, "planning"):
-        return "critic"
-
-    if not state.get("grocery_list"):
+    current_phase = state.get("current_phase", "memory")
+    assert current_phase in {"memory", "planning", "shopping"}
+    if current_phase == "shopping":
         return "shopping_subgraph"
-    if not state.get("purchase_orders"):
+    if current_phase == "planning":
+        return "planning_subgraph"
+    if state.get("replan_count", 0) > 0:
+        return "planning_subgraph"
+    return "load_memory"
+
+
+def route_from_critic(state: PlannerState, max_replans: int = 1) -> str:
+    verdict = state["critic_verdict"]
+    current_phase = state.get("current_phase", "planning")
+    assert current_phase in {"planning", "shopping"}
+    if current_phase == "shopping":
+        return "end"
+    if verdict["passed"]:
         return "shopping_subgraph"
-
-    if not _phase_verified(verdicts, "shopping"):
-        return "critic"
-
-    if not state.get("human_approved"):
-        return "checkout_subgraph"
-
-    return "complete"
-
-
-def _phase_verified(verdicts: list, phase: str) -> bool:
-    """Check if a phase has a passing critic verdict."""
-    return any(v["phase"] == phase and v["passed"] for v in verdicts)
+    if state["replan_count"] >= max_replans:
+        return "end"
+    return "planning_subgraph"
 ```
 
 ### Run-Centric API
@@ -728,7 +667,7 @@ FastAPI app with run-centric API, PostgreSQL, the planning subgraph (determinist
 - `src/shopper/agents/state.py` — initial `PlannerState` + `PlanningSubgraphState`
 
 **6. Minimal top-level graph**
-- `src/shopper/agents/graph.py` — `supervisor → planning_subgraph → end`
+- Phase 1 milestone graph: `supervisor → planning_subgraph → end`
 - `src/shopper/agents/supervisor.py` — initial routing logic
 
 **7. Run-centric API**
@@ -828,7 +767,7 @@ Qdrant-backed hybrid recipe search with reranking. MealSelector upgraded to a re
   - `save_memory(user_id, category, content, metadata)` — write episodic memory
   - `recall(user_id, query, top_k, categories)` — semantic search over user's memories
   - `forget(user_id, memory_id)` — delete stale/wrong memory
-  - Namespaces: `(user_id, "meal_feedback")`, `(user_id, "store_behavior")`, `(user_id, "substitution_decisions")`, `(user_id, "general_preferences")`
+  - Namespaces: `(user_id, "meal_feedback")`, `(user_id, "store_behavior")`, `(user_id, "substitution_decisions")` (future/manual swap feedback), `(user_id, "general_preferences")`
 - `load_memory` node added to graph — runs at start of each run:
   - Loads canonical preferences from Postgres (`UserPreferenceSummary`)
   - Retrieves top-k relevant episodic memories from MemoryStore based on current run context
@@ -850,15 +789,15 @@ Qdrant-backed hybrid recipe search with reranking. MealSelector upgraded to a re
 
 **4. Critic subgraph (initial)**
 - `src/shopper/agents/subgraphs/critic.py`:
-  - Runs deterministic validators: `nutrition_validator` (macros within bounds), `safety_validator` (no allergens)
-  - Runs LLM groundedness check: every recipe_id exists in DB, nutrition facts match source
-  - Outputs `CriticVerdict` to state
-  - On failure: sets structured `repair_instructions` for the supervisor to route to replanning
+  - Builds the planning boundary critic used after `planning_subgraph`
+  - Worker nodes own narrow deterministic guards; the critic handles week-level macro alignment, groundedness, variety review, and optional LLM assessment
+  - Outputs a single `CriticVerdict` plus structured `repair_instructions`
+  - On failure: routes back into the planning subgraph rather than a standalone substitution node
 - `src/shopper/validators/safety_validator.py` — checks allergies against recipe ingredients (deterministic, zero tolerance)
 
 **5. Graph update**
-- `supervisor → planning_subgraph → critic → (pass: end, fail: substitution → supervisor)`
-- Substitution node stubbed for now (just re-routes to planning with tighter constraints)
+- Phase 2 milestone flow: `supervisor → planning_subgraph → planning_critic_subgraph`
+- Pass path ended the run at this milestone; fail path already reused the planning worker with tighter `repair_instructions`
 
 **6. Evals (expanded)**
 - `src/shopper/evaluation/datasets/meal_plan_cases.json` — 20 profiles with expected meal plan properties
@@ -953,11 +892,11 @@ Deterministic grocery list builder that extracts ingredients, diffs against frid
   - No LLM call — this is pure code in a graph node
 
 **4. Shopping subgraph**
-- `src/shopper/agents/subgraphs/shopping.py` — `grocery_builder → (price_optimizer stubbed)` with private message history
+- `src/shopper/agents/subgraphs/shopping.py` — `grocery_builder → price_optimizer` with private message history
 
 **5. Graph update**
-- `supervisor → planning → critic → shopping → critic → end`
-- Price optimizer stubbed (passes through)
+- Current flow: `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → shopping_subgraph → shopping_critic_subgraph → end`
+- Shopping worker nodes own deterministic grocery-building and pricing guards; the shopping critic runs once at the boundary after the full shopping subgraph
 
 **6. Evals (expanded)**
 - `src/shopper/evaluation/datasets/grocery_cases.json` — 15 meal plans with expected grocery lists
@@ -1044,19 +983,17 @@ Price optimizer with parallel store queries (1 real + 2 mock), deterministic pri
   - Writes `purchase_orders` to state
 - `src/shopper/prompts/price_tradeoff.md` — prompt for the online/in-store split decision
 
-**5. Substitution agent (full implementation)**
-- `src/shopper/agents/nodes/substitution.py` — LLM agent triggered on budget overrun or out-of-stock:
-  - Finds nutritionally equivalent substitutes via Qdrant search
-  - Suggests cheaper recipe alternatives
-  - Validates all substitutions against dietary restrictions (safety_validator)
-  - Writes updated state, increments `replan_count`
-- `src/shopper/prompts/substitution.md`
+**5. Repair via existing worker + critic loop**
+- `src/shopper/agents/nodes/price_optimizer.py` writes `replan_reason` when the cheapest available basket is still incomplete or over budget
+- `src/shopper/agents/nodes/shopping_critic.py` turns final shopping failures into structured `repair_instructions`
+- No standalone `substitution.py` exists in the current repo; budget and availability issues stay inside the existing planning/shopping replan story
 
 **6. Graph update**
 - Full shopping subgraph: `grocery_builder → price_optimizer`
-- Critic runs after shopping subgraph
-- Substitution agent wired with replan loop (max 3 iterations)
-- `supervisor → planning → critic → shopping → critic → (pass: checkout, fail: substitution → supervisor)`
+- Planning critic runs after the planning subgraph; shopping critic runs after the shopping subgraph
+- Planning failures route back through a bounded planning replan loop
+- Shopping failures currently end the run with structured `critic_verdict`, `repair_instructions`, and `replan_reason`
+- `supervisor → load_memory → planning_subgraph → planning_critic_subgraph → shopping_subgraph → shopping_critic_subgraph → end`
 
 **7. Evals (expanded)**
 - `src/shopper/evaluation/datasets/price_cases.json` — 15 cases with mock quotes and expected optimization decisions
@@ -1064,7 +1001,7 @@ Price optimizer with parallel store queries (1 real + 2 mock), deterministic pri
   - Agent picked cheapest per item (or justified deviation)
   - Total within budget
   - Online/in-store split is reasonable given user preferences
-- Substitution evals: substituted items are nutritionally similar, within budget, no allergens
+- Repair-path evals: over-budget or unavailable baskets surface actionable `repair_instructions` / `replan_reason`
 
 **8. Frontend — price comparison + budget tracking**
 - `web/src/components/grocery/price-table.tsx` — **store price comparison**:
@@ -1084,14 +1021,14 @@ Price optimizer with parallel store queries (1 real + 2 mock), deterministic pri
 - Update `web/src/app/runs/[runId]/page.tsx`:
   - After grocery list section, show price comparison + purchase orders
   - Budget bar visible throughout shopping phase
-  - During substitution/replan: show "Replanning..." indicator with reason
+  - During critic-driven replan/failure handling: show "Replanning..." indicator with reason
 
 **9. Tests**
 - Unit: `price_ranker` picks cheapest per item correctly
 - Unit: `budget_checker` catches over-budget scenarios
 - Unit: fan-out completes within timeout, handles partial adapter failures gracefully
 - Integration: full run with mock stores → optimized purchase orders
-- Integration: over-budget → substitution → replan → within budget
+- Integration: over-budget → shopping critic failure surfaces actionable `repair_instructions` / `replan_reason`
 - Eval: `run_evals.py --eval price_optimality,safety` passes
 
 ### Key Learnings
@@ -1149,7 +1086,7 @@ browser-use agent for cart building with deterministic verification gates, `inte
 **4. Human approval flow**
 - `POST /v1/runs/{run_id}/resume` with body `{"decision": "approve" | "reject", "edits": {...}}`
 - Resumes graph via `AsyncPostgresSaver` checkpointer
-- On rejection: marks order failed, optionally triggers substitution
+- On rejection: marks order failed and can feed future critic-driven replanning work; there is no standalone substitution step today
 
 **5. Audit logging**
 - `src/shopper/models/audit.py` — `AuditLog` (timestamp, run_id, user_id, agent, action, input_summary, output_summary, screenshot_path, cost_usd, latency_ms)
@@ -1232,7 +1169,7 @@ Full memory write pipeline: feedback → episodic memory → background distilla
 - `src/shopper/agents/nodes/feedback_processor.py`:
   - On feedback submission, writes episodic memories to MemoryStore:
     - `(user_id, "meal_feedback")`: "Rated Thai basil chicken 5/5, comment: 'family loved it, will make again'"
-    - `(user_id, "substitution_decisions")`: "Rejected salmon→tilapia substitution, reason: 'tilapia tastes bland'"
+    - `(user_id, "substitution_decisions")`: "Rejected a cheaper fish swap during manual replan, reason: 'tilapia tastes bland'"
     - `(user_id, "general_preferences")`: "Marked 3 Italian meals as 'skipped' in week 5"
   - Mostly deterministic aggregation for structured feedback
   - LLM used to extract nuanced preferences from free-text comments (e.g., "too much cleanup" → memory: "dislikes high-cleanup recipes")
@@ -1346,7 +1283,7 @@ Model routing for cost reduction, Redis caching, full observability dashboard vi
 
 **1. Model routing**
 - `src/shopper/agents/model_router.py`:
-  - High-stakes (substitution safety, critic groundedness) → Claude Sonnet
+  - High-stakes (planning/shopping critic review, groundedness) → Claude Sonnet
   - Medium (meal selection, price tradeoff) → Claude Sonnet
   - Simple (preference extraction from comments, formatting) → Claude Haiku
   - browser-use: uses its own model selection (optimize for vision tasks)

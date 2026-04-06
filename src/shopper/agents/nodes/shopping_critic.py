@@ -22,13 +22,6 @@ from shopper.schemas import (
     MealSlot,
     PurchaseOrder,
 )
-from shopper.validators import (
-    validate_fridge_inventory_consistency,
-    validate_grocery_aggregation,
-    validate_grocery_fridge_diff,
-    validate_grocery_list,
-    validate_grocery_traceability,
-)
 
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "shopping_critic.md"
@@ -45,7 +38,7 @@ class ShoppingCriticNode:
             event_type="node_entered",
             phase="shopping",
             node_name="critic",
-            message="Reviewing grocery coverage, aggregation, fridge diffing, and traceability.",
+            message="Reviewing final purchase coverage, budget fit, and shopping-level quality.",
         )
 
         context = await self.context_assembler.build_context("shopping_critic", state)
@@ -61,19 +54,6 @@ class ShoppingCriticNode:
 
         findings = dedupe_findings(
             [
-                *build_findings("S_COVERAGE", validate_grocery_list(meals, grocery_list), severity="issue"),
-                *build_findings("S_AGGREGATION", validate_grocery_aggregation(meals, grocery_list), severity="issue"),
-                *build_findings(
-                    "S_FRIDGE_DIFF",
-                    validate_grocery_fridge_diff(meals, grocery_list, fridge_inventory),
-                    severity="issue",
-                ),
-                *build_findings(
-                    "S_FRIDGE_DIFF",
-                    validate_fridge_inventory_consistency(grocery_list, fridge_inventory),
-                    severity="issue",
-                ),
-                *build_findings("S_TRACEABILITY", validate_grocery_traceability(meals, grocery_list), severity="issue"),
                 *build_findings(
                     "S_PRICE_COVERAGE",
                     self._validate_purchase_order_coverage(grocery_list, purchase_orders),
@@ -83,7 +63,14 @@ class ShoppingCriticNode:
             ]
         )
 
-        llm_assessment = await self._llm_review(context.payload, meals, grocery_list, fridge_inventory)
+        llm_assessment = await self._llm_review(
+            context.payload,
+            meals,
+            grocery_list,
+            fridge_inventory,
+            purchase_orders,
+            budget_summary,
+        )
         if llm_assessment is not None:
             findings = dedupe_findings(
                 [
@@ -150,6 +137,8 @@ class ShoppingCriticNode:
         meals: List[MealSlot],
         grocery_list: List[GroceryItem],
         fridge_inventory: List[FridgeItemSnapshot],
+        purchase_orders: List[PurchaseOrder],
+        budget_summary: Optional[BudgetSummary],
     ) -> Optional[CriticAssessment]:
         if self.chat_model is None or not grocery_list:
             return None
@@ -168,6 +157,8 @@ class ShoppingCriticNode:
             ],
             "grocery_list": [item.model_dump(mode="json") for item in grocery_list],
             "fridge_inventory": [item.model_dump(mode="json") for item in fridge_inventory],
+            "purchase_orders": [order.model_dump(mode="json") for order in purchase_orders],
+            "budget_summary": budget_summary.model_dump(mode="json") if budget_summary is not None else None,
         }
         return await invoke_structured(
             self.chat_model,
@@ -181,18 +172,10 @@ class ShoppingCriticNode:
     def _repair_instructions(self, findings: List[CriticFinding]) -> List[str]:
         codes = {finding.code for finding in findings if finding.severity == "issue"}
         instructions: List[str] = []
-        if "S_COVERAGE" in codes:
-            instructions.append("Rebuild the grocery list so every recipe ingredient is represented exactly once.")
-        if "S_AGGREGATION" in codes:
-            instructions.append("Re-aggregate duplicated or over-counted grocery items across recipes before finalizing the list.")
-        if "S_FRIDGE_DIFF" in codes:
-            instructions.append("Re-diff the grocery list against fridge inventory and recompute already-have and shopping quantities.")
-        if "S_TRACEABILITY" in codes:
-            instructions.append("Attach the correct source recipe ids to every grocery item for traceability.")
         if "S_PRICE_COVERAGE" in codes:
             instructions.append("Rebuild purchase orders so every item that still needs buying is assigned to exactly one store.")
         if "S_BUDGET" in codes:
-            instructions.append("Choose a lower-cost store strategy or cheaper substitutions until the basket fits the weekly budget.")
+            instructions.append("Choose a lower-cost store strategy or replan meals toward cheaper ingredients until the basket fits the weekly budget.")
         return instructions
 
     def _validate_purchase_order_coverage(

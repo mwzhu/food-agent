@@ -4,8 +4,15 @@ from dataclasses import dataclass
 from typing import Any, Dict
 
 from shopper.agents.events import emit_run_event
-from shopper.schemas import ContextMetadata, FridgeItemSnapshot, MealSlot
+from shopper.schemas import ContextMetadata, FridgeItemSnapshot, GroceryItem, MealSlot
 from shopper.services import aggregate_quantities, categorize, diff_against_fridge, extract_ingredients
+from shopper.validators import (
+    validate_fridge_inventory_consistency,
+    validate_grocery_aggregation,
+    validate_grocery_fridge_diff,
+    validate_grocery_list,
+    validate_grocery_traceability,
+)
 
 
 @dataclass
@@ -33,6 +40,7 @@ class GroceryBuilderNode:
                 fridge_inventory,
             )
         )
+        self._validate_grocery_outputs(meals, grocery_list, fridge_inventory)
 
         metadata = ContextMetadata(
             node_name="grocery_builder",
@@ -60,3 +68,23 @@ class GroceryBuilderNode:
             "fridge_inventory": [item.model_dump(mode="json") for item in fridge_inventory],
             "context_metadata": [metadata.model_dump(mode="json")],
         }
+
+    def _validate_grocery_outputs(
+        self,
+        meals: list[MealSlot],
+        grocery_list: list[GroceryItem],
+        fridge_inventory: list[FridgeItemSnapshot],
+    ) -> None:
+        issues = (
+            validate_grocery_list(meals, grocery_list)
+            + validate_grocery_aggregation(meals, grocery_list)
+            + validate_grocery_fridge_diff(meals, grocery_list, fridge_inventory)
+            + validate_fridge_inventory_consistency(grocery_list, fridge_inventory)
+            + validate_grocery_traceability(meals, grocery_list)
+        )
+        if issues:
+            raise ValueError(
+                "Grocery builder produced an invalid shopping list: {issues}".format(
+                    issues="; ".join(issues)
+                )
+            )
