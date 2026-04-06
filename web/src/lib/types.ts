@@ -9,6 +9,8 @@ export type Goal = "cut" | "maintain" | "bulk";
 export type CookingSkill = "beginner" | "intermediate" | "advanced";
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
 export type InventoryCategory = "produce" | "dairy" | "meat" | "pantry" | "frozen";
+export type PurchaseChannel = "online" | "in_store";
+export type PurchaseOrderStatus = "pending" | "approved" | "purchased" | "failed";
 export type RunEventType =
   | "phase_started"
   | "phase_completed"
@@ -16,7 +18,7 @@ export type RunEventType =
   | "node_completed"
   | "run_completed"
   | "error";
-export type PhaseName = "memory" | "planning" | "shopping" | "checkout";
+export type PhaseName = "memory" | "planning" | "checkout";
 export type PhaseStatus = "pending" | "running" | "completed" | "locked" | "failed";
 export type RunLifecycleStatus = "pending" | "running" | "completed" | "failed";
 export type RunStatus = Exclude<RunLifecycleStatus, "pending">;
@@ -130,6 +132,61 @@ export interface GroceryItem {
   shopping_quantity: number;
   quantity_in_fridge: number;
   source_recipe_ids: string[];
+  best_store: string | null;
+  best_price: number | null;
+  buy_online: boolean | null;
+}
+
+export interface StoreQuote {
+  store: string;
+  item_name: string;
+  requested_quantity: number;
+  requested_unit: string | null;
+  price: number;
+  unit_price: number;
+  in_stock: boolean;
+  delivery_fee: number;
+  min_order: number;
+}
+
+export interface StoreSummary {
+  store: string;
+  item_count: number;
+  available_item_count: number;
+  subtotal: number;
+  delivery_fee: number;
+  total: number;
+  min_order: number;
+  all_items_available: boolean;
+  meets_min_order: boolean;
+}
+
+export interface PurchaseOrderItem {
+  name: string;
+  quantity: number;
+  unit: string | null;
+  category: InventoryCategory;
+  source_recipe_ids: string[];
+  price: number;
+  unit_price: number;
+}
+
+export interface PurchaseOrder {
+  store: string;
+  items: PurchaseOrderItem[];
+  subtotal: number;
+  delivery_fee: number;
+  total_cost: number;
+  channel: PurchaseChannel;
+  status: PurchaseOrderStatus;
+}
+
+export interface BudgetSummary {
+  budget: number;
+  total_cost: number;
+  overage: number;
+  within_budget: boolean;
+  utilization: number;
 }
 
 export interface FridgeItemBase {
@@ -175,7 +232,6 @@ export interface MemorySnapshot {
 export interface PhaseStatuses {
   memory: PhaseStatus;
   planning: PhaseStatus;
-  shopping: PhaseStatus;
   checkout: PhaseStatus;
 }
 
@@ -240,6 +296,10 @@ export interface PlannerStateSnapshot {
   nutrition_plan: NutritionPlan | null;
   selected_meals: MealSlot[];
   grocery_list: GroceryItem[];
+  store_quotes: StoreQuote[];
+  store_summaries: StoreSummary[];
+  purchase_orders: PurchaseOrder[];
+  budget_summary: BudgetSummary | null;
   fridge_inventory: FridgeItemSnapshot[];
   user_preferences_learned: PreferenceSummary;
   retrieved_memories: MemorySnapshot[];
@@ -251,6 +311,9 @@ export interface PlannerStateSnapshot {
   current_phase: PhaseName | null;
   phase_statuses: PhaseStatuses;
   replan_count: number;
+  replan_reason: string | null;
+  price_strategy: string | null;
+  price_rationale: string | null;
   latest_error: string | null;
   trace_metadata: TraceMetadata;
 }

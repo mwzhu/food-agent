@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from typing import Any, Dict
 
 from shopper.agents.events import emit_run_event
-from shopper.schemas import ContextMetadata, FridgeItemSnapshot, MealSlot
+from shopper.schemas import ContextMetadata, FridgeItemSnapshot, GroceryItem, MealSlot
 from shopper.services import aggregate_quantities, categorize, diff_against_fridge, extract_ingredients
 
 
@@ -16,7 +16,7 @@ class GroceryBuilderNode:
         await emit_run_event(
             run_id=state["run_id"],
             event_type="node_entered",
-            phase="shopping",
+            phase="planning",
             node_name="grocery_builder",
             message="Aggregating recipe ingredients and diffing them against the fridge.",
         )
@@ -46,7 +46,7 @@ class GroceryBuilderNode:
         await emit_run_event(
             run_id=state["run_id"],
             event_type="node_completed",
-            phase="shopping",
+            phase="planning",
             node_name="grocery_builder",
             message="Built a grocery list with {count} tracked items.".format(count=len(grocery_list)),
             data={

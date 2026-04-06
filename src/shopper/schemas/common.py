@@ -5,14 +5,14 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
-from shopper.schemas.grocery import GroceryItem
+from shopper.schemas.grocery import BudgetSummary, GroceryItem, PurchaseOrder, StoreQuote, StoreSummary
 from shopper.schemas.inventory import FridgeItemSnapshot
 from shopper.schemas.user import UserProfileBase
 
 
 MealType = Literal["breakfast", "lunch", "dinner", "snack"]
 RunLifecycleStatus = Literal["pending", "running", "completed", "failed"]
-PhaseName = Literal["memory", "planning", "shopping", "checkout"]
+PhaseName = Literal["memory", "planning", "checkout"]
 PhaseStatus = Literal["pending", "running", "completed", "locked", "failed"]
 RunEventType = Literal[
     "phase_started",
@@ -120,7 +120,6 @@ class ContextMetadata(BaseModel):
 class PhaseStatuses(BaseModel):
     memory: PhaseStatus = "pending"
     planning: PhaseStatus = "pending"
-    shopping: PhaseStatus = "locked"
     checkout: PhaseStatus = "locked"
 
 
@@ -138,6 +137,10 @@ class PlannerStateSnapshot(BaseModel):
     nutrition_plan: Optional[NutritionPlan] = None
     selected_meals: List[MealSlot] = Field(default_factory=list)
     grocery_list: List[GroceryItem] = Field(default_factory=list)
+    store_quotes: List[StoreQuote] = Field(default_factory=list)
+    store_summaries: List[StoreSummary] = Field(default_factory=list)
+    purchase_orders: List[PurchaseOrder] = Field(default_factory=list)
+    budget_summary: Optional[BudgetSummary] = None
     fridge_inventory: List[FridgeItemSnapshot] = Field(default_factory=list)
     user_preferences_learned: PreferenceSummary = Field(default_factory=PreferenceSummary)
     retrieved_memories: List[Dict[str, Any]] = Field(default_factory=list)
@@ -151,6 +154,9 @@ class PlannerStateSnapshot(BaseModel):
     current_phase: Optional[PhaseName] = None
     phase_statuses: PhaseStatuses = Field(default_factory=PhaseStatuses)
     replan_count: int = 0
+    replan_reason: Optional[str] = None
+    price_strategy: Optional[str] = None
+    price_rationale: Optional[str] = None
     latest_error: Optional[str] = None
     trace_metadata: TraceMetadata = Field(default_factory=TraceMetadata)
 
@@ -179,10 +185,6 @@ class PlannerStateSnapshot(BaseModel):
         elif phase == "planning":
             phase_statuses.memory = "completed"
             phase_statuses.planning = "failed"
-        elif phase == "shopping":
-            phase_statuses.memory = "completed"
-            phase_statuses.planning = "completed"
-            phase_statuses.shopping = "failed"
         else:
             phase_statuses.checkout = "failed"
         return self.model_copy(
@@ -192,32 +194,5 @@ class PlannerStateSnapshot(BaseModel):
                 "current_phase": phase,
                 "current_node": "error",
                 "phase_statuses": phase_statuses,
-            }
-        )
-
-    def as_shopping_run(self, *, run_id: str) -> "PlannerStateSnapshot":
-        assert self.selected_meals
-        assert self.nutrition_plan is not None
-        return self.model_copy(
-            update={
-                "run_id": run_id,
-                "status": "running",
-                "grocery_list": [],
-                "fridge_inventory": [],
-                "critic_verdict": None,
-                "repair_instructions": [],
-                "blocked_recipe_ids": [],
-                "avoid_cuisines": [],
-                "context_metadata": [],
-                "current_node": "supervisor",
-                "current_phase": "shopping",
-                "phase_statuses": PhaseStatuses(
-                    memory="completed",
-                    planning="completed",
-                    shopping="running",
-                ),
-                "replan_count": 0,
-                "latest_error": None,
-                "trace_metadata": TraceMetadata(),
             }
         )

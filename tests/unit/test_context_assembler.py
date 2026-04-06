@@ -142,7 +142,7 @@ def test_context_assembler_includes_failed_plan_and_critic_feedback_for_replans(
     assert context.payload["replan_attempt"] == 1
 
 
-def test_context_assembler_builds_shopping_critic_context_with_fridge_and_traceability():
+def test_context_assembler_builds_critic_context_with_grocery_and_budget_artifacts():
     assembler = ContextAssembler(
         memory_store=DummyMemoryStore(),
         settings=Settings(
@@ -182,6 +182,16 @@ def test_context_assembler_builds_shopping_critic_context_with_fridge_and_tracea
                 "recipe": None,
             }
         ],
+        "nutrition_plan": {
+            "tdee": 2200,
+            "daily_calories": 520,
+            "protein_g": 42,
+            "carbs_g": 48,
+            "fat_g": 12,
+            "fiber_g": 10,
+            "goal": "maintain",
+            "applied_restrictions": [],
+        },
         "grocery_list": [
             {
                 "name": "chicken breast",
@@ -205,9 +215,44 @@ def test_context_assembler_builds_shopping_critic_context_with_fridge_and_tracea
                 "expiry_date": None,
             }
         ],
+        "store_summaries": [
+            {
+                "store": "Walmart",
+                "item_count": 1,
+                "available_item_count": 1,
+                "subtotal": 6.5,
+                "delivery_fee": 0.0,
+                "total": 6.5,
+                "min_order": 0.0,
+                "all_items_available": True,
+                "meets_min_order": True,
+            }
+        ],
+        "purchase_orders": [
+            {
+                "store": "Walmart",
+                "items": [],
+                "subtotal": 6.5,
+                "delivery_fee": 0.0,
+                "total_cost": 6.5,
+                "channel": "in_store",
+                "status": "pending",
+            }
+        ],
+        "budget_summary": {
+            "budget": 130.0,
+            "total_cost": 6.5,
+            "overage": 0.0,
+            "within_budget": True,
+            "utilization": 0.05,
+        },
+        "price_strategy": "single_store_in_store",
+        "replan_reason": "Use cheaper dinners if pricing drifts upward.",
     }
 
-    context = asyncio.run(assembler.build_context("shopping_critic", state))
+    context = asyncio.run(assembler.build_context("critic", state))
 
     assert context.payload["grocery_list"][0]["source_recipe_ids"] == ["sheet-pan-dinner"]
     assert context.payload["fridge_inventory"][0]["name"] == "spinach"
+    assert context.payload["store_summaries"][0]["store"] == "Walmart"
+    assert context.payload["budget_summary"]["within_budget"] is True

@@ -60,7 +60,7 @@ export default function DashboardPage() {
           <CardContent className="grid gap-8 p-8 lg:grid-cols-[1.2fr_0.8fr]">
             <div className="space-y-5">
               <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">
-                Phase 3 experience
+                Phase 4 experience
               </p>
               <h1 className="max-w-[12ch] font-display text-4xl leading-none md:text-6xl">
                 Start by creating the profile your planner will cook for.
@@ -77,10 +77,10 @@ export default function DashboardPage() {
             <div className="grid gap-4 rounded-[1.75rem] border border-border bg-background/70 p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]">
               <div>
                 <p className="text-sm font-semibold">What you unlock</p>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">
-                  The stack now supports SSE progress streaming, richer meal cards, grocery
-                  lists, and fridge inventory tracking on the same run detail surface.
-                </p>
+              <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                  The stack now supports SSE progress streaming, richer meal cards, fridge-aware
+                  grocery lists, and store-level price optimization on the same run detail surface.
+              </p>
               </div>
               <div className="space-y-3">
                 <Badge>Profile persistence</Badge>
@@ -138,8 +138,8 @@ export default function DashboardPage() {
           </p>
           <CardTitle className="text-4xl md:text-5xl">Planner cockpit for {user.user_id}</CardTitle>
           <CardDescription className="max-w-3xl text-base">
-            Phase 3 adds fridge-aware grocery generation on top of the live planning and critic
-            workflow, so each completed run now ends with a usable shopping list.
+            Phase 4 adds store comparison, budget tracking, and purchase-order recommendations on
+            top of the live planning and critic workflow.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -231,7 +231,7 @@ export default function DashboardPage() {
             <ul className="space-y-3 text-sm leading-6 text-muted-foreground">
               <li>Create and persist a user profile.</li>
               <li>Launch a streamed nutrition-planning run from saved preferences.</li>
-              <li>Review calories, macros, meal selections, grocery lists, critic verdicts, and trace metadata.</li>
+              <li>Review calories, macros, grocery lists, price comparisons, purchase orders, critic verdicts, and trace metadata.</li>
             </ul>
           </CardContent>
         </Card>

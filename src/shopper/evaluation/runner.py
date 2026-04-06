@@ -19,25 +19,18 @@ from shopper.evaluation.evaluators.meal_relevance import MealRelevanceEvaluator
 from shopper.evaluation.evaluators.nutrition_accuracy import NutritionAccuracyEvaluator
 from shopper.evaluation.evaluators.safety import SafetyEvaluator
 from shopper.schemas import FridgeItemSnapshot, GroceryItem, MealSlot, NutritionPlan, PlannerStateSnapshot
+from shopper.schemas.user import UserProfileBase
+from shopper.services import (
+    aggregate_quantities,
+    calculate_macros,
+    calculate_tdee,
+    categorize,
+    diff_against_fridge,
+    extract_ingredients,
+)
 
 
 DATASET_DIR = Path(__file__).resolve().parent / "datasets"
-SHOPPING_EVAL_PROFILE = {
-    "age": 30,
-    "weight_lbs": 170,
-    "height_in": 68,
-    "sex": "female",
-    "activity_level": "lightly_active",
-    "goal": "maintain",
-    "dietary_restrictions": [],
-    "allergies": [],
-    "budget_weekly": 140,
-    "household_size": 1,
-    "cooking_skill": "intermediate",
-    "schedule_json": {"weeknight_dinner": "30m"},
-}
-
-
 class EvaluationRunner:
     def __init__(self, graph, settings: Settings, recipe_store) -> None:
         self.graph = graph
@@ -55,6 +48,10 @@ class EvaluationRunner:
         self.grocery_traceability_evaluator = GroceryTraceabilityEvaluator()
 
     async def run(self, eval_name: str) -> Dict[str, Any]:
+        if eval_name == "nutrition":
+            cases = self._load_cases("nutrition_cases.json")
+            return self._run_nutrition_eval(cases)
+
         if eval_name == "grocery_category":
             cases = self._load_cases("grocery_category_cases.json")
             return self._run_grocery_category_eval(cases)
@@ -69,7 +66,6 @@ class EvaluationRunner:
             return await self._run_grocery_eval(cases, eval_name)
 
         dataset_name = {
-            "nutrition": "nutrition_cases.json",
             "daily_macro_alignment": "meal_plan_cases.json",
             "meal_relevance": "meal_plan_cases.json",
             "safety": "safety_cases.json",
@@ -138,6 +134,41 @@ class EvaluationRunner:
             "results": results,
         }
 
+    def _run_nutrition_eval(self, cases: list[dict[str, Any]]) -> dict[str, Any]:
+        results = []
+        for case in cases:
+            plan = self._build_nutrition_plan(case["profile"])
+            evaluation = self.nutrition_evaluator.evaluate(case, plan)
+            results.append(
+                {
+                    "case_id": case["case_id"],
+                    "passed": evaluation["passed"],
+                    "issues": evaluation["issues"],
+                    "trace_metadata": {
+                        "kind": "deterministic_component",
+                        "project": self.settings.langsmith_project,
+                        "trace_id": None,
+                        "source": "eval",
+                    },
+                    "nutrition_plan": plan.model_dump(mode="json"),
+                    "selected_meals": [],
+                    "grocery_list": [],
+                    "profile": case["profile"],
+                    **{key: value for key, value in evaluation.items() if key not in {"passed", "issues"}},
+                }
+            )
+
+        passed = all(result["passed"] for result in results)
+        upload = self._maybe_upload_results("nutrition", results)
+        return {
+            "eval_name": "nutrition",
+            "passed": passed,
+            "num_cases": len(results),
+            "pass_rate": round(sum(1 for result in results if result["passed"]) / float(len(results)), 4),
+            "langsmith_upload": upload,
+            "results": results,
+        }
+
     def _load_cases(self, dataset_name: str) -> list[dict[str, Any]]:
         cases = json.loads((DATASET_DIR / dataset_name).read_text(encoding="utf-8"))
         assert isinstance(cases, list)
@@ -148,37 +179,30 @@ class EvaluationRunner:
         for case in cases:
             meals = self._build_case_meals(case)
             fridge_inventory = self._build_case_fridge_inventory(case)
-            initial_state = self._build_shopping_eval_state(case["case_id"], meals, fridge_inventory)
-            graph_result = await invoke_planner_graph(self.graph, initial_state, self.settings, source="eval")
-            grocery_list = [GroceryItem.model_validate(item) for item in graph_result["grocery_list"]]
+            grocery_list = categorize(
+                diff_against_fridge(
+                    aggregate_quantities(extract_ingredients(meals)),
+                    fridge_inventory,
+                )
+            )
             evaluation = self._evaluate_shopping_case(eval_name, case, meals, grocery_list, fridge_inventory)
-            critic_verdict = graph_result["critic_verdict"]
-            if not critic_verdict["passed"]:
-                evaluation = {
-                    **evaluation,
-                    "passed": False,
-                    "issues": sorted(
-                        set(
-                            list(evaluation["issues"])
-                            + [
-                                "Shopping critic failed: {issue}".format(issue=issue)
-                                for issue in critic_verdict["issues"]
-                            ]
-                        )
-                    ),
-                }
             results.append(
                 {
                     "case_id": case["case_id"],
                     "passed": evaluation["passed"],
                     "issues": evaluation["issues"],
-                    "trace_metadata": graph_result.get("trace_metadata", {}),
-                    "nutrition_plan": graph_result.get("nutrition_plan"),
+                    "trace_metadata": {
+                        "kind": "deterministic_component",
+                        "project": self.settings.langsmith_project,
+                        "trace_id": None,
+                        "source": "eval",
+                    },
+                    "nutrition_plan": None,
                     "selected_meals": [meal.model_dump(mode="json") for meal in meals],
                     "grocery_list": [item.model_dump(mode="json") for item in grocery_list],
                     "meal_plan": case["meal_plan"],
                     "fridge_inventory": case["fridge_inventory"],
-                    "critic_verdict": graph_result.get("critic_verdict"),
+                    "critic_verdict": None,
                     **{key: value for key, value in evaluation.items() if key not in {"passed", "issues"}},
                 }
             )
@@ -200,31 +224,6 @@ class EvaluationRunner:
             user_id=case["case_id"],
             user_profile=case["profile"],
         ).model_dump(mode="json")
-
-    def _build_shopping_eval_state(
-        self,
-        case_id: str,
-        meals: list[MealSlot],
-        fridge_inventory: list[FridgeItemSnapshot],
-    ) -> dict[str, Any]:
-        snapshot = PlannerStateSnapshot.starting(
-            run_id="eval-{case_id}".format(case_id=case_id),
-            user_id=case_id,
-            user_profile=SHOPPING_EVAL_PROFILE,
-        )
-        snapshot = snapshot.model_copy(
-            update={
-                "selected_meals": meals,
-                "fridge_inventory": fridge_inventory,
-                "status": "running",
-                "current_node": "supervisor",
-                "current_phase": "shopping",
-                "phase_statuses": snapshot.phase_statuses.model_copy(
-                    update={"memory": "completed", "planning": "completed", "shopping": "running", "checkout": "locked"}
-                ),
-            }
-        )
-        return snapshot.model_dump(mode="json")
 
     def _build_case_meals(self, case: dict[str, Any]) -> list[MealSlot]:
         meals: list[MealSlot] = []
@@ -265,6 +264,13 @@ class EvaluationRunner:
             )
             for index, item in enumerate(case["fridge_inventory"], start=1)
         ]
+
+    def _build_nutrition_plan(self, profile_payload: dict[str, Any]) -> NutritionPlan:
+        profile = UserProfileBase.model_validate(profile_payload)
+        tdee = calculate_tdee(profile)
+        plan = calculate_macros(tdee=tdee, goal=profile.goal, sex=profile.sex)
+        plan.applied_restrictions = sorted(set(profile.dietary_restrictions + profile.allergies))
+        return plan
 
     def _evaluate_case(self, eval_name: str, case: dict[str, Any], graph_result: dict[str, Any]) -> dict[str, Any]:
         plan = NutritionPlan.model_validate(graph_result["nutrition_plan"])

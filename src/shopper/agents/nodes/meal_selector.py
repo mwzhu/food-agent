@@ -15,7 +15,12 @@ from shopper.agents.tools import RecipeSearchTool
 from shopper.memory import ContextAssembler
 from shopper.schemas import ContextMetadata, MealSlot, MealType, NutritionPlan, PreferenceSummary, RecipeRecord
 from shopper.schemas.user import UserProfileBase
-from shopper.validators import expand_allergy_terms, prep_cap_for_day
+from shopper.validators import (
+    expand_allergy_terms,
+    prep_cap_for_day,
+    validate_meal_plan_safety,
+    validate_meal_plan_slot_coverage,
+)
 
 
 PROMPT_PATH = Path(__file__).resolve().parents[2] / "prompts" / "meal_selector.md"
@@ -110,6 +115,7 @@ class MealSelectorNode:
             prompt_template=prompt_template,
             assembled_context=context.payload,
         )
+        self._validate_selected_meals(selected_meals, profile)
         llm_used = any(source == "llm" for source in decision_sources.values())
         for meal in selected_meals:
             decision_source = decision_sources[self._slot_id(day=meal.day, meal_type=meal.meal_type)]
@@ -208,20 +214,36 @@ class MealSelectorNode:
             "blocked_recipe_ids": sorted(inputs.blocked_recipe_ids),
             "max_prep_time": slot.max_prep_time,
         }
-        candidates = await self.recipe_search.search(
+        candidates = await self._search_and_filter_candidates(
+            profile=profile,
+            slot=slot,
+            inputs=inputs,
             query=slot.query,
             filters=filters,
+            search_context=search_context,
             top_k=6,
-            context=search_context,
         )
+        if not candidates:
+            candidates = await self._search_and_filter_candidates(
+                profile=profile,
+                slot=slot,
+                inputs=inputs,
+                query=slot.query,
+                filters=filters,
+                search_context=search_context,
+                top_k=18,
+            )
         if not candidates:
             relaxed_filters = dict(filters)
             relaxed_filters.pop("max_prep_time", None)
-            candidates = await self.recipe_search.search(
+            candidates = await self._search_and_filter_candidates(
+                profile=profile,
+                slot=slot,
+                inputs=inputs,
                 query=slot.query,
                 filters=relaxed_filters,
-                top_k=6,
-                context=search_context,
+                search_context=search_context,
+                top_k=24,
             )
         if not candidates:
             raise ValueError("Recipe search returned no candidates for {meal_type}.".format(meal_type=slot.meal_type))
@@ -492,6 +514,70 @@ class MealSelectorNode:
 
     def _slot_id(self, day: str, meal_type: MealType) -> str:
         return "{day}:{meal_type}".format(day=day, meal_type=meal_type)
+
+    def _filter_candidates_for_slot(
+        self,
+        profile: UserProfileBase,
+        slot: MealRequest,
+        inputs: MealSelectorInputs,
+        candidates: list[Dict[str, Any]],
+    ) -> list[Dict[str, Any]]:
+        blocked_terms = {
+            term.lower().strip()
+            for term in [*expand_allergy_terms(profile.allergies), *inputs.preferences.avoided_ingredients]
+            if term
+        }
+        filtered: list[Dict[str, Any]] = []
+        for candidate in candidates:
+            recipe = RecipeRecord.model_validate(candidate["recipe"])
+            if recipe.recipe_id in inputs.blocked_recipe_ids:
+                continue
+            if recipe.cuisine and recipe.cuisine.lower() in inputs.avoid_cuisines:
+                continue
+            ingredient_names = {
+                ingredient.name.lower()
+                for ingredient in recipe.ingredients
+                if ingredient.name
+            }
+            if any(blocked_term in ingredient_name for blocked_term in blocked_terms for ingredient_name in ingredient_names):
+                continue
+            filtered.append(candidate)
+        return filtered
+
+    async def _search_and_filter_candidates(
+        self,
+        *,
+        profile: UserProfileBase,
+        slot: MealRequest,
+        inputs: MealSelectorInputs,
+        query: str,
+        filters: Dict[str, Any],
+        search_context: Dict[str, Any],
+        top_k: int,
+    ) -> list[Dict[str, Any]]:
+        candidates = await self.recipe_search.search(
+            query=query,
+            filters=filters,
+            top_k=top_k,
+            context=search_context,
+        )
+        return self._filter_candidates_for_slot(profile, slot, inputs, candidates)
+
+    def _validate_selected_meals(
+        self,
+        meals: List[MealSlot],
+        profile: UserProfileBase,
+    ) -> None:
+        issues = (
+            validate_meal_plan_slot_coverage(meals)
+            + validate_meal_plan_safety(meals, profile.allergies)
+        )
+        if issues:
+            raise ValueError(
+                "Meal selector produced an invalid weekly plan: {issues}".format(
+                    issues="; ".join(issues)
+                )
+            )
 
     def _build_meal_slot(
         self,

@@ -1,29 +1,28 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
-import { useState } from "react";
+import { useParams } from "next/navigation";
 
+import { BudgetBar } from "@/components/grocery/budget-bar";
 import { GroceryList } from "@/components/grocery/grocery-list";
+import { PriceTable } from "@/components/grocery/price-table";
+import { PurchaseOrders } from "@/components/grocery/purchase-orders";
 import { MealCalendar } from "@/components/plan/meal-calendar";
 import { NutritionSummary } from "@/components/plan/nutrition-summary";
 import { RunProgress } from "@/components/run/run-progress";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { useCreateShoppingRun, useRun, useRunTrace } from "@/hooks/use-run";
+import { useRun, useRunTrace } from "@/hooks/use-run";
 import { useRunStream } from "@/hooks/use-run-stream";
 import { formatDateTime, formatLabel } from "@/lib/utils";
 
 export default function RunDetailPage() {
-  const router = useRouter();
   const params = useParams<{ runId: string }>();
   const runId = params.runId;
   const runQuery = useRun(runId, true);
   const traceQuery = useRunTrace(runId);
   const stream = useRunStream(runId);
-  const createShoppingRunMutation = useCreateShoppingRun();
-  const [shoppingErrorMessage, setShoppingErrorMessage] = useState<string | null>(null);
 
   if (runQuery.isLoading && !runQuery.data) {
     return (
@@ -54,23 +53,6 @@ export default function RunDetailPage() {
   const run = runQuery.data;
   const nutritionPlan = run.state_snapshot.nutrition_plan;
   const trace = traceQuery.data;
-  const canStartShopping =
-    run.status !== "running" &&
-    run.state_snapshot.selected_meals.length > 0 &&
-    run.state_snapshot.grocery_list.length === 0;
-
-  const startShopping = async () => {
-    setShoppingErrorMessage(null);
-
-    try {
-      const shoppingRun = await createShoppingRunMutation.mutateAsync(run.run_id);
-      router.push(`/runs/${shoppingRun.run_id}`);
-    } catch (error) {
-      setShoppingErrorMessage(
-        error instanceof Error ? error.message : "Could not start a shopping run from this meal plan.",
-      );
-    }
-  };
 
   return (
     <section className="space-y-6">
@@ -82,7 +64,7 @@ export default function RunDetailPage() {
           <CardTitle className="text-4xl md:text-5xl">Planning run {run.run_id.slice(0, 8)}</CardTitle>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground">
             Created {formatDateTime(run.created_at)} for {run.user_id}. The state below is the
-            live Phase 3 artifact returned by the backend worker and streaming layer.
+            live pre-checkout artifact returned by the upstream planning workflow.
           </p>
           <div className="flex flex-wrap items-center gap-3">
             <Badge variant={run.status === "completed" ? "success" : run.status === "failed" ? "outline" : "default"}>
@@ -99,9 +81,6 @@ export default function RunDetailPage() {
               </Button>
             ) : null}
           </div>
-          {shoppingErrorMessage ? (
-            <p className="text-sm font-medium text-accent-foreground">{shoppingErrorMessage}</p>
-          ) : null}
         </CardHeader>
       </Card>
 
@@ -138,14 +117,30 @@ export default function RunDetailPage() {
                   <Link href="/inventory">Edit fridge</Link>
                 </Button>
               </div>
+              <BudgetBar
+                budgetSummary={run.state_snapshot.budget_summary}
+                isPlanningActive={run.status === "running" && run.state_snapshot.current_phase === "planning"}
+                replanReason={run.state_snapshot.replan_reason}
+              />
               <GroceryList items={run.state_snapshot.grocery_list} />
+              <PriceTable
+                items={run.state_snapshot.grocery_list}
+                purchaseOrders={run.state_snapshot.purchase_orders}
+                quotes={run.state_snapshot.store_quotes}
+                summaries={run.state_snapshot.store_summaries}
+              />
+              <PurchaseOrders
+                orders={run.state_snapshot.purchase_orders}
+                rationale={run.state_snapshot.price_rationale}
+                strategy={run.state_snapshot.price_strategy}
+              />
             </div>
-          ) : run.state_snapshot.phase_statuses.shopping === "running" || run.status === "running" ? (
+          ) : run.status === "running" ? (
             <Card>
               <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
                 <div>
-                  <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Shopping</p>
-                  <CardTitle>Waiting for the grocery build</CardTitle>
+                  <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Planning</p>
+                  <CardTitle>Waiting for grocery preparation</CardTitle>
                 </div>
                 <Button asChild size="sm" variant="ghost">
                   <Link href="/inventory">Edit fridge</Link>
@@ -153,36 +148,8 @@ export default function RunDetailPage() {
               </CardHeader>
               <CardContent>
                 <p className="text-sm text-muted-foreground">
-                  The shopping phase will diff recipe ingredients against your saved fridge inventory before it renders
-                  the grocery list here.
-                </p>
-              </CardContent>
-            </Card>
-          ) : canStartShopping ? (
-            <Card>
-              <CardHeader className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                <div>
-                  <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Shopping</p>
-                  <CardTitle>Start shopping from the saved meal plan</CardTitle>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button asChild size="sm" variant="ghost">
-                    <Link href="/inventory">Edit fridge</Link>
-                  </Button>
-                  <Button
-                    disabled={createShoppingRunMutation.isPending}
-                    onClick={() => void startShopping()}
-                    size="sm"
-                    type="button"
-                  >
-                    {createShoppingRunMutation.isPending ? "Starting shopping..." : "Start shopping"}
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground">
-                  This run already has meals. Start a shopping-only follow-up run to build the grocery list even if the
-                  planning critic blocked the automatic handoff.
+                  The planning workflow will diff recipe ingredients against your fridge, compare mock-store prices,
+                  and build purchase orders before it renders the result here.
                 </p>
               </CardContent>
             </Card>
@@ -242,11 +209,11 @@ export default function RunDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Critic</p>
-              <CardTitle>Verification verdict</CardTitle>
-            </CardHeader>
+            <Card>
+              <CardHeader>
+                <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Critic</p>
+                <CardTitle>Verification verdict</CardTitle>
+              </CardHeader>
             <CardContent className="space-y-3 text-sm leading-6 text-muted-foreground">
               {run.state_snapshot.critic_verdict ? (
                 <>
@@ -273,7 +240,7 @@ export default function RunDetailPage() {
                   ) : null}
                 </>
               ) : (
-                <p>Critic results will appear once the planning phase finishes.</p>
+                <p>Critic results will appear once the active phase finishes.</p>
               )}
             </CardContent>
           </Card>
