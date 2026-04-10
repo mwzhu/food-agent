@@ -5,6 +5,7 @@ from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
+from shopper.schemas.checkout import CheckoutResumeRequest, CheckoutRunCreateRequest
 from shopper.schemas.common import PlannerStateSnapshot, RunLifecycleStatus
 from shopper.schemas.user import UserProfileBase
 
@@ -32,3 +33,19 @@ class RunTraceRead(BaseModel):
     trace_id: Optional[str] = None
     source: Optional[str] = None
     url: Optional[str] = None
+
+
+class CheckoutRunCreate(CheckoutRunCreateRequest):
+    pass
+
+
+class CheckoutSmokeRunCreateRequest(BaseModel):
+    user_id: str
+
+
+class WalmartSmokeRunCreateRequest(BaseModel):
+    user_id: str
+
+
+class RunResumeRequest(CheckoutResumeRequest):
+    pass

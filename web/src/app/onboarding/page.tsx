@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { useCurrentUser } from "@/components/layout/providers";
+import { ProfileHandleForm } from "@/components/profile/profile-handle-form";
 import { ProfileForm } from "@/components/profile/profile-form";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +31,11 @@ export default function OnboardingPage() {
     }
   };
 
+  const handleSupplementQuickStart = async (nextUserId: string) => {
+    setUserId(nextUserId);
+    router.replace("/supplements");
+  };
+
   return (
     <section className="space-y-6">
       <Card>
@@ -38,11 +44,11 @@ export default function OnboardingPage() {
             Onboarding
           </p>
           <CardTitle className="text-4xl md:text-5xl">
-            Build the profile your planner will use for every run.
+            Choose the onboarding path that matches what you want to test.
           </CardTitle>
           <CardDescription className="max-w-3xl text-base">
-            The form mirrors the backend schema for phase 1, then stores the active profile
-            id locally so you can move through the product like a real user.
+            Supplements only need a local profile handle, while the meal planner still uses the full grocery profile
+            schema backed by the API.
           </CardDescription>
         </CardHeader>
         {userId ? (
@@ -51,9 +57,44 @@ export default function OnboardingPage() {
             <Button asChild size="sm" variant="ghost">
               <Link href="/">Back to dashboard</Link>
             </Button>
-          </CardContent>
-        ) : null}
+        </CardContent>
+      ) : null}
       </Card>
+
+      <div className="grid gap-5 xl:grid-cols-[0.9fr_1.1fr]">
+        <Card>
+          <CardHeader>
+            <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">
+              Supplements
+            </p>
+            <CardTitle>Quick start with the supplement demo</CardTitle>
+            <CardDescription>
+              Set a local profile handle and jump directly into the supplement intake form. No grocery profile is
+              required for this path.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <ProfileHandleForm
+              initialValue={userId}
+              onSubmit={handleSupplementQuickStart}
+              submitLabel="Continue to supplements"
+            />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">
+              Meal planner
+            </p>
+            <CardTitle>Create the full grocery planning profile</CardTitle>
+            <CardDescription>
+              This is the original onboarding flow for meal planning, grocery generation, inventory, and checkout lab
+              testing.
+            </CardDescription>
+          </CardHeader>
+        </Card>
+      </div>
 
       {errorMessage ? (
         <div className="rounded-[1.5rem] border border-accent bg-accent/70 px-4 py-3 text-sm font-medium text-accent-foreground">
@@ -61,7 +102,7 @@ export default function OnboardingPage() {
         </div>
       ) : null}
 
-      <ProfileForm mode="create" onSubmit={handleSubmit} submitLabel="Create profile" />
+      <ProfileForm mode="create" onSubmit={handleSubmit} submitLabel="Create planner profile" />
     </section>
   );
 }

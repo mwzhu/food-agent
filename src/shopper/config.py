@@ -63,6 +63,60 @@ class Settings(BaseSettings):
         alias="LANGSMITH_API_KEY",
         validation_alias=AliasChoices("LANGSMITH_API_KEY", "LANGCHAIN_API_KEY"),
     )
+    checkout_artifacts_dir: str = Field(
+        default="data/checkout_artifacts",
+        alias="SHOPPER_CHECKOUT_ARTIFACTS_DIR",
+    )
+    checkout_max_order_total_usd: float = Field(
+        default=200.0,
+        alias="SHOPPER_CHECKOUT_MAX_ORDER_TOTAL_USD",
+        ge=0,
+    )
+    checkout_max_weekly_total_usd: float = Field(
+        default=500.0,
+        alias="SHOPPER_CHECKOUT_MAX_WEEKLY_TOTAL_USD",
+        ge=0,
+    )
+    checkout_execution_provider: Literal["router", "browser_use", "chatgpt_instacart"] = Field(
+        default="router",
+        alias="SHOPPER_CHECKOUT_EXECUTION_PROVIDER",
+    )
+    browser_checkout_headless: bool = Field(default=True, alias="SHOPPER_BROWSER_CHECKOUT_HEADLESS")
+    browser_checkout_max_steps: int = Field(default=80, alias="SHOPPER_BROWSER_CHECKOUT_MAX_STEPS", ge=1, le=500)
+    browser_checkout_use_cloud: bool = Field(default=False, alias="SHOPPER_BROWSER_CHECKOUT_USE_CLOUD")
+    browser_checkout_cloud_profile_id: Optional[str] = Field(
+        default=None,
+        alias="SHOPPER_BROWSER_CHECKOUT_CLOUD_PROFILE_ID",
+    )
+    browser_checkout_cloud_proxy_country_code: Optional[str] = Field(
+        default=None,
+        alias="SHOPPER_BROWSER_CHECKOUT_CLOUD_PROXY_COUNTRY_CODE",
+    )
+    browser_checkout_cloud_timeout_minutes: Optional[int] = Field(
+        default=None,
+        alias="SHOPPER_BROWSER_CHECKOUT_CLOUD_TIMEOUT_MINUTES",
+        ge=1,
+        le=240,
+    )
+    browser_checkout_captcha_solver: bool = Field(
+        default=True,
+        alias="SHOPPER_BROWSER_CHECKOUT_CAPTCHA_SOLVER",
+    )
+    browser_checkout_user_data_dir: Optional[str] = Field(
+        default=None,
+        alias="SHOPPER_BROWSER_CHECKOUT_USER_DATA_DIR",
+    )
+    browser_checkout_storage_state_path: Optional[str] = Field(
+        default=None,
+        alias="SHOPPER_BROWSER_CHECKOUT_STORAGE_STATE_PATH",
+    )
+    browser_checkout_model_provider: Literal["shopper_default", "anthropic", "openai", "browser_use"] = Field(
+        default="shopper_default",
+        alias="SHOPPER_BROWSER_CHECKOUT_MODEL_PROVIDER",
+    )
+    browser_checkout_model: Optional[str] = Field(default=None, alias="SHOPPER_BROWSER_CHECKOUT_MODEL")
+    chatgpt_checkout_start_url: str = Field(default="https://chatgpt.com/", alias="SHOPPER_CHATGPT_CHECKOUT_START_URL")
+    browser_use_api_key: Optional[str] = Field(default=None, alias="BROWSER_USE_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")
     usda_api_key: Optional[str] = Field(default=None, alias="USDA_API_KEY")

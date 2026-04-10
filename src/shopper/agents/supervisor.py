@@ -11,7 +11,9 @@ async def supervisor_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
 def route_from_supervisor(state: Dict[str, Any]) -> str:
     current_phase = state.get("current_phase", "memory")
-    assert current_phase in {"memory", "planning", "shopping"}
+    assert current_phase in {"memory", "planning", "shopping", "checkout"}
+    if current_phase == "checkout":
+        return "checkout_subgraph"
     if current_phase == "shopping":
         return "shopping_subgraph"
     if current_phase == "planning":

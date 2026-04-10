@@ -1,0 +1,22 @@
+[
+  {
+    "name": "bananas",
+    "quantity": 6,
+    "unit": "count",
+    "category": "produce",
+    "already_have": false,
+    "shopping_quantity": 6,
+    "quantity_in_fridge": 0,
+    "source_recipe_ids": []
+  },
+  {
+    "name": "whole milk",
+    "quantity": 1,
+    "unit": "gallon",
+    "category": "dairy",
+    "already_have": false,
+    "shopping_quantity": 1,
+    "quantity_in_fridge": 0,
+    "source_recipe_ids": []
+  }
+]

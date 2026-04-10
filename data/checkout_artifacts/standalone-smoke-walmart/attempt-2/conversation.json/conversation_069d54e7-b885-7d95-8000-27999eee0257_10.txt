@@ -1,0 +1,974 @@
+ system 
+You are an AI agent designed to operate in an iterative loop to automate browser tasks. Your ultimate goal is accomplishing the task provided in <user_request>.
+<intro>
+You excel at following tasks:
+1. Navigating complex websites and extracting precise information
+2. Automating form submissions and interactive web actions
+3. Gathering and saving information
+4. Using your filesystem effectively to decide what to keep in your context
+5. Operate effectively in an agent loop
+6. Efficiently performing diverse web tasks
+</intro>
+<language_settings>
+- Default working language: **English**
+- Always respond in the same language as the user request
+</language_settings>
+<input>
+At every step, your input will consist of:
+1. <agent_history>: A chronological event stream including your previous actions and their results.
+2. <agent_state>: Current <user_request>, summary of <file_system>, <todo_contents>, and <step_info>.
+3. <browser_state>: Current URL, open tabs, interactive elements indexed for actions, and visible page content.
+4. <browser_vision>: Screenshot of the browser with bounding boxes around interactive elements. If you used screenshot before, this will contain a screenshot.
+5. <read_state> This will be displayed only if your previous action was extract or read_file. This data is only shown in the current step.
+</input>
+<agent_history>
+Agent history will be given as a list of step information as follows:
+<step_{step_number}>:
+Evaluation of Previous Step: Assessment of last action
+Memory: Your memory of this step
+Next Goal: Your goal for this step
+Action Results: Your actions and their results
+</step_{step_number}>
+and system messages wrapped in <sys> tag.
+</agent_history>
+<user_request>
+USER REQUEST: This is your ultimate objective and always remains visible.
+- This has the highest priority. Make the user happy.
+- If the user request is very specific - then carefully follow each step and dont skip or hallucinate steps.
+- If the task is open ended you can plan yourself how to get it done.
+</user_request>
+<browser_state>
+1. Browser State will be given as:
+Current URL: URL of the page you are currently viewing.
+Open Tabs: Open tabs with their ids.
+Interactive Elements: All interactive elements will be provided in a tree-style XML format:
+- Format: `[index]<tagname attribute=value />` for interactive elements
+- Text content appears as child nodes on separate lines (not inside tags)
+- Indentation with tabs shows parent/child relationships
+Examples:
+[33]<div />
+	User form
+	[35]<input type=text placeholder=Enter name />
+	*[38]<button aria-label=Submit form />
+		Submit
+[40]<a />
+	About us
+Note that:
+- Only elements with numeric indexes in [] are interactive
+- (stacked) indentation (with \t) is important and means that the element is a (html) child of the element above (with a lower index)
+- Elements tagged with a star `*[` are the new interactive elements that appeared on the website since the last step - if url has not changed. Your previous actions caused that change. Think if you need to interact with them, e.g. after input you might need to select the right option from the list.
+- Pure text elements without [] are not interactive
+- `|SCROLL|` prefix indicates scrollable containers with scroll position info
+- `|SHADOW(open)|` or `|SHADOW(closed)|` prefix indicates shadow DOM elements
+</browser_state>
+<browser_vision>
+If you used screenshot before, you will be provided with a screenshot of the current page with  bounding boxes around interactive elements. This is your GROUND TRUTH: reason about the image in your thinking to evaluate your progress.
+If an interactive index inside your browser_state does not have text information, then the interactive index is written at the top center of it's element in the screenshot.
+Use screenshot if you are unsure or simply want more information.
+</browser_vision>
+<browser_rules>
+Strictly follow these rules while using the browser and navigating the web:
+- Only interact with elements that have a numeric [index] assigned.
+- Only use indexes that are explicitly provided.
+- If research is needed, open a **new tab** instead of reusing the current one.
+- If the page changes after, for example, an input text action, analyse if you need to interact with new elements, e.g. selecting the right option from the list.
+- By default, only elements in the visible viewport are listed.
+- CAPTCHAs are automatically solved by the browser. If you encounter a CAPTCHA, it will be handled for you and you will be notified of the result. Do not attempt to solve CAPTCHAs manually — just continue with your task after the CAPTCHA is resolved.
+- If the page is not fully loaded, use the wait action.
+- You can call extract on specific pages to gather structured semantic information from the entire page, including parts not currently visible.
+- Call extract only if the information you are looking for is not visible in your <browser_state> otherwise always just use the needed text from the <browser_state>.
+- Calling the extract tool is expensive! DO NOT query the same page with the same extract query multiple times. Make sure that you are on the page with relevant information based on the screenshot before calling this tool.
+- Use search_page to quickly find specific text or patterns on the page — it's free and instant. Great for: verifying content exists, finding where data is located, checking for error messages, locating prices/dates/IDs.
+- Use find_elements with CSS selectors to explore DOM structure — also free and instant. Great for: counting items (e.g. table rows, product cards), getting links or attributes, understanding page layout before extracting.
+- Prefer search_page over scrolling when looking for specific text content not visible in browser_state. Use find_elements when you need to understand element structure or extract attributes.
+- If you fill an input field and your action sequence is interrupted, most often something changed e.g. suggestions popped up under the field.
+- If the action sequence was interrupted in previous step due to page changes, make sure to complete any remaining actions that were not executed. For example, if you tried to input text and click a search button but the click was not executed because the page changed, you should retry the click action in your next step.
+- If the <user_request> includes specific page information such as product type, rating, price, location, etc., ALWAYS look for filter/sort options FIRST before browsing results. Apply all relevant filters before scrolling through results.
+- The <user_request> is the ultimate goal. If the user specifies explicit steps, they have always the highest priority.
+- If you input into a field, you might need to press enter, click the search button, or select from dropdown for completion.
+- For autocomplete/combobox fields (e.g. search boxes with suggestions, fields with role="combobox"): type your search text, then WAIT for the suggestions dropdown to appear in the next step. If suggestions appear (new elements marked with *[), click the correct one instead of pressing Enter. If no suggestions appear after one step, you may press Enter or submit normally.
+- Don't login into a page if you don't have to. Don't login if you don't have the credentials.
+- There are 2 types of tasks always first think which type of request you are dealing with:
+1. Very specific step by step instructions:
+- Follow them as very precise and don't skip steps. Try to complete everything as requested.
+2. Open ended tasks. Plan yourself, be creative in achieving them.
+- If you get stuck e.g. with logins in open-ended tasks you can re-evaluate the task and try alternative ways, e.g. sometimes accidentally login pops up, even though there some part of the page is accessible or you get some information via web search. CAPTCHAs are handled automatically.
+- If you reach a PDF viewer, the file is automatically downloaded and you can see its path in <available_file_paths>. You can either read the file or scroll in the page to see more.
+- Handle popups, modals, cookie banners, and overlays immediately before attempting other actions. Look for close buttons (X, Close, Dismiss, No thanks, Skip) or accept/reject options. If a popup blocks interaction with the main page, handle it first.
+- If you encounter access denied (403), bot detection, or rate limiting, do NOT repeatedly retry the same URL. Try alternative approaches or report the limitation.
+- Detect and break out of unproductive loops: if you are on the same URL for 3+ steps without meaningful progress, or the same action fails 2-3 times, try a different approach. Track what you have tried in memory to avoid repeating failed approaches.
+</browser_rules>
+<file_system>
+- You have access to a persistent file system which you can use to track progress, store results, and manage long tasks.
+- Your file system is initialized with a `todo.md`: Use this to keep a checklist for known subtasks. Use `replace_file` tool to update markers in `todo.md` as first action whenever you complete an item. This file should guide your step-by-step execution when you have a long running task.
+- If you are writing a `csv` file, make sure to use double quotes if cell elements contain commas.
+- If the file is too large, you are only given a preview of your file. Use `read_file` to see the full content if necessary.
+- If exists, <available_file_paths> includes files you have downloaded or uploaded by the user. You can only read or upload these files but you don't have write access.
+- If the task is really long, initialize a `results.md` file to accumulate your results.
+- DO NOT use the file system if the task is less than 10 steps!
+</file_system>
+<planning>
+Decide whether to plan based on task complexity:
+- Simple task (1-3 actions, e.g. "go to X and click Y"): Act directly. Do NOT output `plan_update`.
+- Complex but clear task (multi-step, known approach): Output `plan_update` immediately with 3-10 todo items.
+- Complex and unclear task (unfamiliar site, vague goal): Explore for a few steps first, then output `plan_update` once you understand the landscape.
+When a plan exists, `<plan>` in your input shows status markers: [x]=done, [>]=current, [ ]=pending, [-]=skipped.
+Output `current_plan_item` (0-indexed) to indicate which item you are working on.
+Output `plan_update` again only to revise the plan after unexpected obstacles or after exploration.
+Completing all plan items does NOT mean the task is done. Always verify against the original <user_request> before calling `done`.
+</planning>
+<task_completion_rules>
+You must call the `done` action in one of two cases:
+- When you have fully completed the USER REQUEST.
+- When you reach the final allowed step (`max_steps`), even if the task is incomplete.
+- If it is ABSOLUTELY IMPOSSIBLE to continue.
+The `done` action is your opportunity to terminate and share your findings with the user.
+- Set `success` to `true` only if the full USER REQUEST has been completed with no missing components.
+- If any part of the request is missing, incomplete, or uncertain, set `success` to `false`.
+- You can use the `text` field of the `done` action to communicate your findings and `files_to_display` to send file attachments to the user, e.g. `["results.md"]`.
+- Put ALL the relevant information you found so far in the `text` field when you call `done` action.
+- Combine `text` and `files_to_display` to provide a coherent reply to the user and fulfill the USER REQUEST.
+- You are ONLY ALLOWED to call `done` as a single action. Don't call it together with other actions.
+- If the user asks for specified format, such as "return JSON with following structure", "return a list of format...", MAKE sure to use the right format in your answer.
+- If the user asks for a structured output, your `done` action's schema will be modified. Take this schema into account when solving the task!
+- When you reach 75% of your step budget, critically evaluate whether you can complete the full task in the remaining steps.
+  If completion is unlikely, shift strategy: focus on the highest-value remaining items and consolidate your results (save progress to files if the file system is in use).
+  This ensures that when you do call `done` (at max_steps or earlier), you have meaningful partial results to deliver.
+- For large multi-item tasks (e.g. "search 50 items"), estimate the per-item cost from the first few items.
+  If the task will exceed your budget, prioritize the most important items and save results incrementally.
+<pre_done_verification>
+BEFORE calling `done` with `success=true`, you MUST perform this verification:
+1. **Re-read the USER REQUEST** — list every concrete requirement (items to find, actions to perform, format to use, filters to apply).
+2. **Check each requirement against your results:**
+   - Did you extract the CORRECT number of items? (e.g., "list 5 items" → count them)
+   - Did you apply ALL specified filters/criteria? (e.g., price range, date, location)
+   - Does your output match the requested format exactly?
+3. **Verify actions actually completed:**
+   - If you submitted a form, posted a comment, or saved a file — check the page state or screenshot to confirm it happened.
+   - If you took a screenshot or downloaded a file — verify it exists in your file system.
+4. **Verify data grounding:** Every URL, price, name, and value must appear verbatim in your tool outputs or browser_state. Do NOT use your training knowledge to fill gaps — if information was not found on the page during this session, say so explicitly. Never fabricate or invent values.
+5. **Blocking error check:** If you hit an unresolved blocker (payment declined, login failed without credentials, email/verification wall, required paywall, access denied not bypassed) → set `success=false`. Temporary obstacles you overcame (auto-solved CAPTCHAs, dismissed popups, retried errors) do NOT count.
+6. **If ANY requirement is unmet, uncertain, or unverifiable — set `success` to `false`.**
+   Partial results with `success=false` are more valuable than overclaiming success.
+</pre_done_verification>
+</task_completion_rules>
+<action_rules>
+- You are allowed to use a maximum of 4 actions per step.
+If you are allowed multiple actions, you can specify multiple actions in the list to be executed sequentially (one after another).
+- If the page changes after an action, the remaining actions are automatically skipped and you get the new state.
+Check the browser state each step to verify your previous action achieved its goal.
+</action_rules>
+<efficiency_guidelines>
+You can output multiple actions in one step. Try to be efficient where it makes sense. Do not predict actions which do not make sense for the current page.
+
+**Action categories:**
+- **Page-changing (always last):** `navigate`, `search`, `go_back`, `switch`, `evaluate` — these always change the page. Remaining actions after them are skipped automatically. Note: `evaluate` runs arbitrary JS that can modify the DOM, so it is never safe to chain other actions after it.
+- **Potentially page-changing:** `click` (on links/buttons that navigate) — monitored at runtime; if the page changes, remaining actions are skipped.
+- **Safe to chain:** `input`, `scroll`, `find_text`, `extract`, `search_page`, `find_elements`, file operations — these do not change the page and can be freely combined.
+
+**Shadow DOM:** Elements inside shadow DOM that have `[index]` markers are directly clickable with `click(index)`. Do NOT use `evaluate` to click them.
+
+**Recommended combinations:**
+- `input` + `input` + `input` + `click` → Fill multiple form fields then submit
+- `input` + `input` → Fill multiple form fields
+- `scroll` + `scroll` → Scroll further down the page
+- `click` + `click` → Navigate multi-step flows (only when clicks do not navigate)
+- File operations + browser actions
+
+Do not try multiple different paths in one step. Always have one clear goal per step.
+Place any page-changing action **last** in your action list, since actions after it will not run.
+</efficiency_guidelines>
+<reasoning_rules>
+You must reason explicitly and systematically at every step in your `thinking` block.
+Exhibit the following reasoning patterns to successfully achieve the <user_request>:
+- Reason about <agent_history> to track progress and context toward <user_request>.
+- Analyze the most recent "Next Goal" and "Action Result" in <agent_history> and clearly state what you previously tried to achieve.
+- Analyze all relevant items in <agent_history>, <browser_state>, <read_state>, <file_system>, <read_state> and the screenshot to understand your state.
+- Explicitly judge success/failure/uncertainty of the last action. Never assume an action succeeded just because it appears to be executed in your last step in <agent_history>. For example, you might have "Action 1/1: Input '2025-05-05' into element 3." in your history even though inputting text failed. Always verify using <browser_vision> (screenshot) as the primary ground truth. If a screenshot is unavailable, fall back to <browser_state>. If the expected change is missing, mark the last action as failed (or uncertain) and plan a recovery.
+- If todo.md is empty and the task is multi-step, generate a stepwise plan in todo.md using file tools.
+- Analyze `todo.md` to guide and track your progress.
+- If any todo.md items are finished, mark them as complete in the file.
+- Analyze whether you are stuck, e.g. when you repeat the same actions multiple times without any progress. Then consider alternative approaches.
+- Analyze the <read_state> where one-time information are displayed due to your previous action. Reason about whether you want to keep this information in memory and plan writing them into a file if applicable using the file tools.
+- If you see information relevant to <user_request>, plan saving the information into a file.
+- Before writing data into a file, analyze the <file_system> and check if the file already has some content to avoid overwriting.
+- Decide what concise, actionable context should be stored in memory to inform future reasoning.
+- When ready to finish, state you are preparing to call done and communicate completion/results to the user.
+- Before done, use read_file to verify file contents intended for user output.
+- Always reason about the <user_request>. Make sure to carefully analyze the specific steps and information required. E.g. specific filters, specific form fields, specific information to search. Make sure to always compare the current trajectory with the user request.
+</reasoning_rules>
+<examples>
+Here are examples of good output patterns. Use them as reference but never copy them directly.
+<todo_examples>
+  "write_file": {
+    "file_name": "todo.md",
+    "content": "# ArXiv CS.AI Recent Papers Collection Task\n\n## Goal: Collect metadata for 20 most recent papers\n\n## Tasks:\n- [ ] Navigate to https://arxiv.org/list/cs.AI/recent\n- [ ] Initialize papers.md file for storing paper data\n- [ ] Collect paper 1/20: The Automated LLM Speedrunning Benchmark\n- [x] Collect paper 2/20: AI Model Passport\n- [ ] Collect paper 3/20: Embodied AI Agents\n- [ ] Collect paper 4/20: Conceptual Topic Aggregation\n- [ ] Collect paper 5/20: Artificial Intelligent Disobedience\n- [ ] Continue collecting remaining papers from current page\n- [ ] Navigate through subsequent pages if needed\n- [ ] Continue until 20 papers are collected\n- [ ] Verify all 20 papers have complete metadata\n- [ ] Final review and completion"
+  }
+</todo_examples>
+<evaluation_examples>
+- Positive Examples:
+"evaluation_previous_goal": "Successfully navigated to the product page and found the target information. Verdict: Success"
+"evaluation_previous_goal": "Clicked the login button and user authentication form appeared. Verdict: Success"
+- Negative Examples:
+"evaluation_previous_goal": "Failed to input text into the search bar as I cannot see it in the image. Verdict: Failure"
+"evaluation_previous_goal": "Clicked the submit button with index 15 but the form was not submitted successfully. Verdict: Failure"
+</evaluation_examples>
+<memory_examples>
+"memory": "Visited 2 of 5 target websites. Collected pricing data from Amazon ($39.99) and eBay ($42.00). Still need to check Walmart, Target, and Best Buy for the laptop comparison."
+"memory": "Found many pending reports that need to be analyzed in the main page. Successfully processed the first 2 reports on quarterly sales data and moving on to inventory analysis and customer feedback reports."
+"memory": "Search returned results but no filter applied yet. User wants items under $50 with 4+ stars. Will apply price filter first, then rating filter."
+"memory": "Popup appeared blocking the page. Need to close it first before continuing with search."
+"memory": "Previous click on search button failed - page did not change. Will try pressing Enter in the search field instead."
+"memory": "Captcha appeared twice on this site. Will try alternative approach via search engine instead of direct navigation."
+"memory": "403 error on main product page. Will try searching for the product on a different site instead of retrying."
+</memory_examples>
+<next_goal_examples>
+"next_goal": "Click on the 'Add to Cart' button to proceed with the purchase flow."
+"next_goal": "Extract details from the first item on the page."
+"next_goal": "Close the popup that appeared blocking the main content."
+"next_goal": "Apply price filter to narrow results to items under $50."
+</next_goal_examples>
+</examples>
+<output>
+You must ALWAYS respond with a valid JSON in this exact format:
+{
+  "thinking": "A structured <think>-style reasoning block that applies the <reasoning_rules> provided above.",
+  "evaluation_previous_goal": "Concise one-sentence analysis of your last action. Clearly state success, failure, or uncertain.",
+  "memory": "1-3 sentences of specific memory of this step and overall progress. You should put here everything that will help you track progress in future steps. Like counting pages visited, items found, etc.",
+  "next_goal": "State the next immediate goal and action to achieve it, in one clear sentence.",
+  "current_plan_item": 0,
+  "plan_update": ["Todo item 1", "Todo item 2", "Todo item 3"],
+  "action":[{"navigate": { "url": "url_value"}}, // ... more actions in sequence]
+}
+Action list should NEVER be empty.
+`current_plan_item` and `plan_update` are optional. See <planning> for details.
+</output>
+<critical_reminders>
+1. ALWAYS verify action success using the screenshot before proceeding
+2. ALWAYS handle popups/modals/cookie banners before other actions
+3. ALWAYS apply filters when user specifies criteria (price, rating, location, etc.)
+4. NEVER repeat the same failing action more than 2-3 times - try alternatives
+5. NEVER assume success - always verify from screenshot or browser state
+6. CAPTCHAs are solved automatically. If blocked by login/403, try alternative approaches rather than retrying
+7. Put ALL relevant findings in done action's text field
+8. Match user's requested output format exactly
+9. Track progress in memory to avoid loops
+10. When at max_steps, call done with whatever results you have
+11. Always compare current trajectory against the user's original request
+12. Be efficient - combine actions when possible but verify results between major steps
+</critical_reminders>
+<error_recovery>
+When encountering errors or unexpected states:
+1. First, verify the current state using screenshot as ground truth
+2. Check if a popup, modal, or overlay is blocking interaction
+3. If an element is not found, scroll to reveal more content
+4. If an action fails repeatedly (2-3 times), try an alternative approach
+5. If blocked by login/403, consider alternative sites or search engines. CAPTCHAs are solved automatically.
+6. If the page structure is different than expected, re-analyze and adapt
+7. If stuck in a loop, explicitly acknowledge it in memory and change strategy
+8. If max_steps is approaching, prioritize completing the most important parts of the task
+</error_recovery>
+
+
+ user 
+<agent_history>
+Agent initialized
+<step>
+Result
+Found initial url and automatically loaded it. Navigated to https://www.walmart.com/cp/grocery/976759
+Waited 25.0s for perimeterx CAPTCHA to be solved. Result: failed.
+<step>
+The Walmart grocery page has loaded successfully despite the initial CAPTCHA warning. The page is functional and I can see the search bar and product categories. Verdict: Success
+On Walmart grocery page. Need to add: bananas (qty 6) and whole milk (qty 1 gallon). Cart is currently empty ($0.00). Will search for each item and add to cart.
+Close the Spanish popup and search for bananas
+Result
+Clicked button aria-label=Close Spanish / Espa
+Typed 'bananas'
+💡 This is an autocomplete field. Wait for suggestions to appear, then click the correct suggestion instead of pressing Enter.
+<step>
+Successfully typed 'bananas' in the search field and autocomplete suggestions appeared. Verdict: Success
+On Walmart grocery page. Typed 'bananas' in search, autocomplete suggestions visible. Need to click 'bananas' suggestion to search.
+Click on the 'bananas' suggestion to search for bananas
+Result
+Clicked span role=option "bananas"
+Waited 25.0s for perimeterx CAPTCHA to be solved. Result: failed.
+<step>
+Successfully navigated to banana search results page showing Fresh Banana, Each at $0.20. Verdict: Success
+On banana search results page. Fresh Banana, Each costs $0.20 each. Need to add 6 to cart. Cart is currently empty ($0.00). Subscription popup is visible - need to close it first.
+Close the subscription popup and click Add for Fresh Banana, Each to add it to the cart
+Result
+Clicked button "Close" aria-label=Close Subscription C
+Clicked button "Add" aria-label=Add to cart - Fresh 
+<step>
+Successfully added 1 Fresh Banana to cart. Cart shows $0.20. Now need to increase quantity to 6.
+On banana search results. Fresh Banana, Each added with qty 1 ($0.20 each). Need to increase to 6. Then search for whole milk (1 gallon).
+Increase banana quantity from 1 to 6 by clicking the + button 5 times
+Result
+Clicked button aria-label=Increase quantity Fr
+Clicked button aria-label=Increase quantity Fr
+Clicked button aria-label=Increase quantity Fr
+Clicked button aria-label=Increase quantity Fr
+<step>
+Successfully increased banana quantity to 5. Cart shows $1.00 with 5 items. Need one more click to reach quantity 6. Verdict: Partial success.
+Bananas (Fresh Banana, Each) at $0.20 each. Currently qty 5, need qty 6. Cart shows $1.00 with 5 items. Need to click + once more, then search for whole milk.
+Click the + button once more to increase banana quantity from 5 to 6, then search for whole milk.
+Result
+Clicked button aria-label=Increase quantity Fr
+<step>
+Successfully increased banana quantity to 6. Cart shows 6 items and $1.20. Verdict: Success
+Bananas done: Fresh Banana, Each - qty 6 at $0.20 each = $1.20 total. Cart shows 6 items, $1.20. Now need to search for whole milk (1 gallon) and add to cart.
+Search for whole milk to find a 1 gallon option to add to cart.
+Result
+Typed 'whole milk gallon'
+💡 This is an autocomplete field. Wait for suggestions to appear, then click the correct suggestion instead of pressing Enter.
+Clicked button aria-label=Search
+<step>
+Searched for whole milk gallon and navigated to the search results page, but products are still loading (skeleton content visible). Verdict: Partial success - page loaded but products not yet visible.
+Bananas done: Fresh Banana, Each - qty 6 at $0.20 each = $1.20. Cart shows 6 items, $1.20. Now on whole milk gallon search results page - products still loading. Need to wait and then find whole milk 1 gallon to add to cart.
+Wait for the whole milk search results to load, then scroll down to see the milk products.
+Result
+Waited for 3 seconds
+Scrolled down 2.0 pages
+<step>
+Scrolled down on the whole milk search results page. Can now see "Great Value Whole Vitamin D Milk, Gallon, 128 fl oz" at $3.12 with an Add button. Verdict: Success
+Bananas done: Fresh Banana, Each - qty 6 at $0.20 each = $1.20. Cart has 6 items at $1.20. Now on whole milk gallon search results. Found Great Value Whole Vitamin D Milk, Gallon, 128 fl oz at $3.12 - need to add 1 to cart. Need to scroll up first to find the Add button for this product.
+Scroll up to see the Great Value Whole Milk gallon product and click its Add button to add it to cart.
+Result
+Scrolled up 2.0 pages
+Clicked button "Add" aria-label=Add to cart - Great 
+<step>
+Successfully added Great Value Whole Vitamin D Milk, Gallon to cart. Cart shows 7 items and $4.32. Verdict: Success
+Both items added to cart: 1) Fresh Banana, Each - qty 6 at $0.20 each = $1.20. 2) Great Value Whole Vitamin D Milk, Gallon, 128 fl oz - qty 1 at $3.12. Cart shows 7 items, $4.32. Need to navigate to cart page to confirm and capture output.
+Navigate to the cart page to verify both items and capture structured output.
+Result
+Navigated to https://www.walmart.com/cart
+Waited 25.0s for perimeterx CAPTCHA to be solved. Result: failed.
+</agent_history>
+
+<agent_state>
+<user_request>
+You are building a grocery cart for Walmart.
+Start at https://www.walmart.com/cp/grocery/976759.
+Add every requested item to the cart using the exact requested quantity whenever possible.
+Do not complete checkout.
+If an item is unavailable, keep it in the output with status='missing'.
+End on the cart page and return structured output only.
+Requested items:
+- requested_name: bananas; quantity: 6.0; unit: count
+- requested_name: whole milk; quantity: 1.0; unit: gallon
+Expected output format: _BrowserUseCartSnapshot
+{
+  "$defs": {
+    "_BrowserUseCartLine": {
+      "properties": {
+        "requested_name": {
+          "title": "Requested Name",
+          "type": "string"
+        },
+        "requested_quantity": {
+          "minimum": 0,
+          "title": "Requested Quantity",
+          "type": "number"
+        },
+        "actual_name": {
+          "title": "Actual Name",
+          "type": "string"
+        },
+        "actual_quantity": {
+          "minimum": 0,
+          "title": "Actual Quantity",
+          "type": "number"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "unit_price": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Unit Price",
+          "type": "number"
+        },
+        "line_total": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Line Total",
+          "type": "number"
+        },
+        "status": {
+          "default": "added",
+          "title": "Status",
+          "type": "string"
+        },
+        "notes": {
+          "default": "",
+          "title": "Notes",
+          "type": "string"
+        },
+        "product_url": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Product Url"
+        }
+      },
+      "required": [
+        "requested_name",
+        "requested_quantity",
+        "actual_name",
+        "actual_quantity"
+      ],
+      "title": "_BrowserUseCartLine",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "items": {
+      "items": {
+        "$ref": "#/$defs/_BrowserUseCartLine"
+      },
+      "title": "Items",
+      "type": "array"
+    },
+    "subtotal": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Subtotal",
+      "type": "number"
+    },
+    "delivery_fee": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Delivery Fee",
+      "type": "number"
+    },
+    "total_cost": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Total Cost",
+      "type": "number"
+    },
+    "cart_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cart Url"
+    },
+    "notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Notes",
+      "type": "array"
+    }
+  },
+  "title": "_BrowserUseCartSnapshot",
+  "type": "object"
+}
+</user_request>
+<file_system>
+
+</file_system>
+<todo_contents>
+[empty todo.md, fill it when applicable]
+</todo_contents>
+<plan>
+[x] 0: Search for bananas and add 6 to cart
+[x] 1: Search for whole milk and add 1 gallon to cart
+[>] 2: Navigate to cart page and capture structured output
+</plan>
+<step_info>Step10 maximum:25
+Today:2026-04-07</step_info>
+</agent_state>
+<browser_state>
+<page_stats>Page appears to show skeleton/placeholder content (still loading?) - 19 links, 198 interactive, 0 iframes, 1 shadow(open), 0 shadow(closed), 29 images, 1052 total elements</page_stats>
+Current tab: 8249
+Available tabs:
+Tab 8249: https://www.walmart.com/cart - walmart.com/cart
+
+<page_info>0.0 pages above, 3.8 pages below — scroll down to reveal more content</page_info>
+
+Interactive elements:
+[Start of page]
+[23075]<div id=__next />
+	[23081]<a aria-label=Walmart Homepage />
+	|SHADOW(open)|[22904]<input aria-label=Search name=q placeholder=Search everything at Walmart online and in store type=search aria-autocomplete=list autocomplete=list />
+	[23083]<button aria-label=Search />
+	[23085]<a role=button expanded=false />
+		Reorder
+		My Items
+	[23089]<div />
+		[23090]<a role=button expanded=false />
+			Sign In
+			Account
+	[23097]<button id=cart-button-header aria-label=Cart contains 7 items Total Amount $4.32 />
+		[23414]<span id=cart-badge />
+		$4.32
+	[23098]<button expanded=false />
+		Departments
+	[23099]<button expanded=false />
+		Services
+	[23449]<h1 id=cartHeader level=1 />
+		Cart
+	(7 items)
+	[23456]<div />
+	[23101]<button aria-label=Pickup and delivery options heading expanded=true />
+		Pickup and delivery options
+	[23102]<button aria-label=shipping, Not available, disabled />
+		shipping
+		Not available
+	[23103]<button aria-label=pickup, All items available, selected />
+		pickup
+		All items available
+	[22914]<button aria-label=delivery, All items available />
+		delivery
+		All items available
+		[23489]<div />
+	[23493]<div />
+		[23501]<h2 id=fulfillment-heading-id aria-label=Pickup or delivery from store, as soon as 
+      Today level=2 />
+			Pickup or delivery from store
+			as soon as 
+      Today
+		[23104]<button aria-label=Reserve a time />
+			Reserve a time
+	7 items
+	[23105]<button id=ItemDetailsSCGroup aria-label=hide details expanded=true />
+	Great Value Whole Vitamin D Milk, Gallon, 128 fl oz
+	Best seller
+	[23106]<a aria-label=Great Value Whole Vitamin D Milk, Gallon, 128 fl oz, 2.4¢/fl oz, 1 in cart />
+	$3.12, 2.4¢/fl oz
+	[23549]<div />
+		[23553]<span />
+		[23555]<span />
+			12
+	2.4¢/fl oz
+	[23107]<a aria-label=Great Value Whole Vitamin D Milk, Gallon, 128 fl oz, 2.4¢/fl oz, 1 in cart />
+		[23562]<span />
+			Great Value Whole Vitamin D Milk, Gallon, 128 fl oz
+	[22916]<img />
+	Free 90-day returns
+	[23571]<span />
+		[23572]<i />
+	SNAP EBT eligible
+	[23108]<button aria-label=Remove Great Value Whole Vitamin D Milk, Gallon, 128 fl oz />
+		Remove
+	[23109]<button aria-label=Save for later: Great Value Whole Vitamin D Milk, Gallon, 128 fl oz />
+		Save for later
+	[23584]<div />
+		[23110]<button aria-label=Decrease quantity Great Value Whole Vitamin D Milk, Gallon, 128 fl oz, Current Quantity 1 />
+	[23590]<div />
+		[23111]<button aria-label=Increase quantity Great Value Whole Vitamin D Milk, Gallon, 128 fl oz, Current Quantity 1 />
+	Fresh Banana, Each
+	Best seller
+	[23112]<a aria-label=Fresh Banana, Each, 50¢/lb, Final cost by weight, 6 in cart />
+	$1.20, avg $0.20 ea, 50¢/lb, Final cost by weight
+	[23620]<div />
+		[23626]<span />
+			20
+	avg $0.20 ea
+	50¢/lb
+	Final cost by weight
+	[23113]<a aria-label=Fresh Banana, Each, 50¢/lb, Final cost by weight, 6 in cart />
+		[23637]<span />
+			Fresh Banana, Each
+	[22918]<img />
+	Free 90-day returns
+	[23647]<span />
+		[23648]<i />
+	SNAP EBT eligible
+	[23114]<button aria-label=Remove Fresh Banana, Each />
+		Remove
+	[23115]<button aria-label=Save for later: Fresh Banana, Each />
+		Save for later
+	[23660]<div />
+		[23116]<button aria-label=Decrease quantity Fresh Banana, Each, Current Quantity 6 />
+	[23666]<div />
+		[23117]<button aria-label=Increase quantity Fresh Banana, Each, Current Quantity 6 />
+	[23672]<div id=root-recommendation-carousel-0 />
+		Add your essentials
+		|scroll element|<ul /> (horizontal 0%)
+			[23121]<a />
+				Best seller Great Value Disposable Paper Plates, 8.5", 100 Count $5.58 $5.58/100 ct
+			Best seller
+			[23122]<button aria-label=Add to cart - Great Value Disposable Paper Plates, 8.5", 100 Count />
+				Add
+			[23705]<div />
+				[23708]<span />
+				[23710]<span />
+					58
+			current price $5.58
+			$5.58/100 ct
+			Great Value Disposable Paper Plates, 8.5", 100 Count
+			[23721]<svg /> <!-- SVG content collapsed -->
+			[23723]<svg /> <!-- SVG content collapsed -->
+			[23725]<svg /> <!-- SVG content collapsed -->
+			[23727]<svg /> <!-- SVG content collapsed -->
+			[23729]<svg /> <!-- SVG content collapsed -->
+			[23732]<span />
+				159854
+			4.7 out of 5 Stars. 159854 reviews
+			Save with
+			[22934]<img alt=Walmart Plus />
+			Pickup
+			[23745]<span />
+				today
+			Delivery
+			[23750]<span />
+				today
+			Shipping, arrives
+			tomorrow
+			[23123]<a />
+				Best seller Dawn Ultra, Dishwashing Liquid, Original Scent, 18 Fl oz $2.94 16.3 ¢/fl oz
+			Best seller
+			[23124]<button aria-label=Add to cart - Dawn Ultra, Dishwashing Liquid, Original Scent, 18 Fl oz />
+				Add
+			[23782]<div />
+				[23785]<span />
+				[23787]<span />
+					94
+			current price $2.94
+			16.3 ¢/fl oz
+			Dawn Ultra, Dishwashing Liquid, Original Scent, 18 Fl oz
+			[23798]<svg /> <!-- SVG content collapsed -->
+			[23800]<svg /> <!-- SVG content collapsed -->
+			[23802]<svg /> <!-- SVG content collapsed -->
+			[23804]<svg /> <!-- SVG content collapsed -->
+			[23806]<svg /> <!-- SVG content collapsed -->
+			[23809]<span />
+				2184
+			4.5 out of 5 Stars. 2184 reviews
+			Save with
+			[22937]<img alt=Walmart Plus />
+			Pickup
+			[23822]<span />
+				today
+			Delivery
+			[23827]<span />
+				today
+			[23125]<a />
+				Best seller Core Power Protein Shake with 26g Protein by fairlife Milk, Chocolate, 14 fl oz $3.88 27.7 ¢/fl oz
+			Best seller
+			[23126]<button aria-label=Add to cart - Core Power Protein Shake with 26g Protein by fairlife Milk, Chocolate, 14 fl oz />
+				Add
+			[23854]<div />
+				[23857]<span />
+				[23859]<span />
+					88
+			current price $3.88
+			27.7 ¢/fl oz
+			Core Power Protein Shake with 26g Protein by fairlife Milk, Chocolate, 14 fl oz
+			[23870]<svg /> <!-- SVG content collapsed -->
+			[23872]<svg /> <!-- SVG content collapsed -->
+			[23874]<svg /> <!-- SVG content collapsed -->
+			[23876]<svg /> <!-- SVG content collapsed -->
+			[23878]<svg /> <!-- SVG content collapsed -->
+			[23881]<span />
+				17401
+			4.6 out of 5 Stars. 17401 reviews
+			Save with
+			[22939]<img alt=Walmart Plus />
+			Pickup
+			[23894]<span />
+				today
+			Delivery
+			[23899]<span />
+				today
+			[23903]<span />
+				[23904]<i />
+			SNAP EBT eligible
+			[23127]<a />
+				Best seller Equate Flushable Wet Wipes, Fresh Scent, 240 Wipes, 5 Pack $6.98 $2.91/100 ct
+			Best seller
+			[23128]<button aria-label=Add to cart - Equate Flushable Wet Wipes, Fresh Scent, 240 Wipes, 5 Pack />
+				Add
+			[23932]<div />
+				[23935]<span />
+				[23937]<span />
+					98
+			current price $6.98
+			$2.91/100 ct
+			Equate Flushable Wet Wipes, Fresh Scent, 240 Wipes, 5 Pack
+			[23948]<svg /> <!-- SVG content collapsed -->
+			[23950]<svg /> <!-- SVG content collapsed -->
+			[23952]<svg /> <!-- SVG content collapsed -->
+			[23954]<svg /> <!-- SVG content collapsed -->
+			[23956]<svg /> <!-- SVG content collapsed -->
+			[23959]<span />
+				99403
+			4.7 out of 5 Stars. 99403 reviews
+			Save with
+			[22941]<img alt=Walmart Plus />
+			Pickup
+			[23972]<span />
+				today
+			Delivery
+			[23977]<span />
+				today
+			Shipping, arrives
+			tomorrow
+			[23129]<a />
+				Best seller Special Kitty Clumping Clay Cat Litter, Fresh Scent, 20 lbs Jug $7.86 2.5 ¢/oz
+			Best seller
+			[23130]<button aria-label=Add to cart - Special Kitty Clumping Clay Cat Litter, Fresh Scent, 20 lbs Jug />
+				Add
+			[24009]<div />
+				[24012]<span />
+				[24014]<span />
+					86
+			current price $7.86
+			[24018]<div />
+				2.5 ¢/oz
+			Special Kitty Clumping Clay Cat Litter, Fresh Scent, 20 lbs Jug
+			[24025]<svg /> <!-- SVG content collapsed -->
+			[24027]<svg /> <!-- SVG content collapsed -->
+			[24029]<svg /> <!-- SVG content collapsed -->
+			[24031]<svg /> <!-- SVG content collapsed -->
+			[24033]<svg /> <!-- SVG content collapsed -->
+			[24036]<span />
+				26564
+			4.6 out of 5 Stars. 26564 reviews
+			Save with
+			[22943]<img alt=Walmart Plus />
+			Pickup
+			[24049]<span />
+				today
+			Delivery
+			[24054]<span />
+				today
+			Shipping, arrives
+			tomorrow
+			[23131]<a />
+				Best seller Goody Ouchless No‑Metal Braided Hair Ties, Black, 30 Count $2.97 Was $4.84 9.9 ¢/count
+			Best seller
+			[23132]<button aria-label=Add to cart - Goody Ouchless No‑Metal Braided Hair Ties, Black, 30 Count />
+				Add
+			[24086]<span />
+				Now
+			[24090]<span />
+			[24092]<span />
+				97
+			current price Now $2.97, Was $4.84
+			[24096]<div />
+				[24097]<span />
+					$4.84
+			9.9 ¢/count
+			Goody Ouchless No‑Metal Braided Hair Ties, Black, 30 Count
+			[24106]<svg /> <!-- SVG content collapsed -->
+			[24108]<svg /> <!-- SVG content collapsed -->
+			[24110]<svg /> <!-- SVG content collapsed -->
+			[24112]<svg /> <!-- SVG content collapsed -->
+			[24114]<svg /> <!-- SVG content collapsed -->
+			[24117]<span />
+				4601
+			4.7 out of 5 Stars. 4601 reviews
+			Save with
+			[22945]<img alt=Walmart Plus />
+			Pickup
+			[24130]<span />
+				today
+			Delivery
+			[24135]<span />
+				today
+			[23133]<a />
+				Rollback Great Value Lemon Scent Disinfecting Wipes, 1 Lbs, 5.5 oz, 75 Count $2.98 Was $3.77 $3.97/100 ct
+			Rollback
+			[23134]<button aria-label=Add to cart - Great Value Lemon Scent Disinfecting Wipes, 1 Lbs, 5.5 oz, 75 Count />
+				Add
+			[24163]<span />
+				Now
+			[24167]<span />
+			[24169]<span />
+				98
+			current price Now $2.98, Was $3.77
+			[24173]<div />
+				[24174]<span />
+					$3.77
+			$3.97/100 ct
+			Great Value Lemon Scent Disinfecting Wipes, 1 Lbs, 5.5 oz, 75 Count
+			[24183]<svg /> <!-- SVG content collapsed -->
+			[24185]<svg /> <!-- SVG content collapsed -->
+			[24187]<svg /> <!-- SVG content collapsed -->
+			[24189]<svg /> <!-- SVG content collapsed -->
+			[24191]<svg /> <!-- SVG content collapsed -->
+			[24193]<span />
+				25774
+			4.8 out of 5 Stars. 25774 reviews
+			Save with
+			[22947]<img alt=Walmart Plus />
+			Pickup
+			[24206]<span />
+				today
+			Delivery
+			[24211]<span />
+				today
+			Shipping, arrives
+			tomorrow
+			[23135]<a />
+				Best seller Crest Toothpaste, 3D White Advanced Teeth Whitening Toothpaste, Radiant Mint, 2.4 oz $3.97 $1.65/oz
+			Best seller
+			[23136]<button aria-label=Add to cart - Crest Toothpaste, 3D White Advanced Teeth Whitening Toothpaste, Radiant Mint, 2.4 oz />
+				Add
+			[24243]<div />
+				[24246]<span />
+				[24248]<span />
+					97
+			current price $3.97
+			[24252]<div />
+				$1.65/oz
+			Crest Toothpaste, 3D White Advanced Teeth Whitening Toothpaste, Radiant Mint, 2.4 oz
+			[24259]<svg /> <!-- SVG content collapsed -->
+			[24261]<svg /> <!-- SVG content collapsed -->
+			[24263]<svg /> <!-- SVG content collapsed -->
+			[24265]<svg /> <!-- SVG content collapsed -->
+			[24267]<svg /> <!-- SVG content collapsed -->
+			[24270]<span />
+				24006
+			4.6 out of 5 Stars. 24006 reviews
+			Save with
+			[22949]<img alt=Walmart Plus />
+			Pickup
+			[24283]<span />
+				today
+			Delivery
+			[24288]<span />
+				today
+			Shipping, arrives
+			tomorrow
+			[23137]<a />
+				Best seller Angel Soft 2-Ply Toilet Paper, 9 Mega Rolls, 320 Sheets Per Roll $6.88 23.9 ¢/100 ct
+			Best seller
+			[23138]<button aria-label=Add to cart - Angel Soft 2-Ply Toilet Paper, 9 Mega Rolls, 320 Sheets Per Roll />
+				Add
+			[24320]<div />
+				[24323]<span />
+				[24325]<span />
+					88
+			current price $6.88
+			23.9 ¢/100 ct
+			Angel Soft 2-Ply Toilet Paper, 9 Mega Rolls, 320 Sheets Per Roll
+			[24336]<svg /> <!-- SVG content collapsed -->
+			[24338]<svg /> <!-- SVG content collapsed -->
+			[24340]<svg /> <!-- SVG content collapsed -->
+			[24342]<svg /> <!-- SVG content collapsed -->
+			[24344]<svg /> <!-- SVG content collapsed -->
+			[24347]<span />
+				11177
+			4.6 out of 5 Stars. 11177 reviews
+			Save with
+			[22951]<img alt=Walmart Plus />
+			Pickup
+			[24360]<span />
+				today
+			Delivery
+			[24365]<span />
+				today
+			Shipping, arrives
+			tomorrow
+		[23167]<a aria-label=Next slide for horizontalScrollerRecommendations list role=button />
+	[25078]<div id=root-recommendation-carousel-1 />
+	|scroll element[23185]<ul /> (horizontal 0%)
+	|scroll element[23243]<ul /> (horizontal 0%)
+	[23281]<button id=Continue to checkout button />
+		Continue to checkout
+	For the best shopping experience,
+	[23282]<a />
+		sign in
+	Subtotal
+	(7 items)
+	[27546]<div />
+		$4.32
+	Below order minimum (less than $35)
+	$6.99
+	Select delivery or pickup to view fees
+	[23283]<button aria-label=Select />
+		Select
+	[27562]<div />
+		Taxes
+	Calculated at checkout
+	Estimated total
+	[27570]<div />
+		$11.31
+	Unlock free delivery of groceries & more to save time + money!
+	[27578]<i />
+	Try Walmart+ for 30 days
+	[23285]<a aria-label=OnePay CashRewards Card Earn unlimited 3% cash back at Walmart and 1.5% back on all other purchases ... role=button />
+		OnePay CashRewards Card
+		Earn unlimited 3% cash back at Walmart and 1.5% back on all other purchases
+		Learn More
+</browser_state>
+
+Current screenshot:
+
+ user 
+Heads up: you have repeated a similar action 5 times in the last 16 actions. If this is intentional and making progress, carry on. If not, it might be worth reconsidering your approach.
+
+{
+  "thinking": "I'm now on the Walmart cart page and can see all the information I need. Let me analyze the cart:\n\n1. Great Value Whole Vitamin D Milk, Gallon, 128 fl oz - qty 1, $3.12\n2. Fresh Banana, Each - qty 6, avg $0.20 ea = $1.20 total\n\nCart shows:\n- 7 items total (but wait, that's odd - I only added 2 products: 6 bananas + 1 milk = 7 items total)\n- Subtotal: $4.32\n- Below order minimum fee: $6.99\n- Estimated total: $11.31\n\nThe cart has both items correctly:\n- Fresh Banana, Each: qty 6, $0.20 each, $1.20 total\n- Great Value Whole Vitamin D Milk, Gallon, 128 fl oz: qty 1, $3.12\n\nThe subtotal is $4.32 which matches 6×$0.20 + 1×$3.12 = $1.20 + $3.12 = $4.32. ✓\n\nNow I need to return structured output. The delivery fee shown is $6.99 (below order minimum fee), and estimated total is $11.31.\n\nLet me prepare the done action with the structured output:\n- bananas: 6 count, Fresh Banana Each, $0.20 each, $1.20 total\n- whole milk: 1 gallon, Great Value Whole Vitamin D Milk Gallon 128 fl oz, $3.12 each, $3.12 total\n- subtotal: $4.32\n- delivery_fee: $6.99 (below order minimum)\n- total_cost: $11.31\n- cart_url: https://www.walmart.com/cart\n\nThe browser state shows the aria label for the banana as \"Fresh Banana, Each, 50¢/lb, Final cost by weight, 6 in cart\" and for milk \"Great Value Whole Vitamin D Milk, Gallon, 128 fl oz, 2.4¢/fl oz, 1 in cart\"\n\nBoth items are correctly in the cart. I have all the information needed to call done.",
+  "evaluation_previous_goal": "Successfully navigated to the cart page and can see both items: Great Value Whole Vitamin D Milk (qty 1, $3.12) and Fresh Banana Each (qty 6, $1.20 total). Subtotal $4.32, estimated total $11.31. Verdict: Success",
+  "memory": "Cart verified: 1) Fresh Banana, Each - qty 6, $0.20 each = $1.20. 2) Great Value Whole Vitamin D Milk, Gallon, 128 fl oz - qty 1 at $3.12. Subtotal $4.32, delivery fee $6.99 (below order minimum), estimated total $11.31. Cart URL: https://www.walmart.com/cart",
+  "next_goal": "Call done with structured output for both cart items.",
+  "current_plan_item": 2,
+  "action": [
+    {
+      "done": {
+        "data": {
+          "items": [
+            {
+              "requested_name": "bananas",
+              "requested_quantity": 6.0,
+              "actual_name": "Fresh Banana, Each",
+              "actual_quantity": 6.0,
+              "unit": "count",
+              "unit_price": 0.2,
+              "line_total": 1.2,
+              "status": "added",
+              "notes": "Final cost by weight, avg $0.20 ea, 50¢/lb",
+              "product_url": null
+            },
+            {
+              "requested_name": "whole milk",
+              "requested_quantity": 1.0,
+              "actual_name": "Great Value Whole Vitamin D Milk, Gallon, 128 fl oz",
+              "actual_quantity": 1.0,
+              "unit": "gallon",
+              "unit_price": 3.12,
+              "line_total": 3.12,
+              "status": "added",
+              "notes": "128 fl oz, 2.4¢/fl oz",
+              "product_url": null
+            }
+          ],
+          "subtotal": 4.32,
+          "delivery_fee": 6.99,
+          "total_cost": 11.31,
+          "cart_url": "https://www.walmart.com/cart",
+          "notes": [
+            "Delivery fee of $6.99 applied due to below order minimum (less than $35)",
+            "Taxes calculated at checkout"
+          ]
+        }
+      }
+    }
+  ]
+}

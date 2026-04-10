@@ -5,13 +5,14 @@ from typing import Any, Dict, List, Literal, Optional, Union
 
 from pydantic import BaseModel, Field
 
+from shopper.schemas.checkout import CheckoutStage, PurchaseOrder
 from shopper.schemas.grocery import GroceryItem
 from shopper.schemas.inventory import FridgeItemSnapshot
 from shopper.schemas.user import UserProfileBase
 
 
 MealType = Literal["breakfast", "lunch", "dinner", "snack"]
-RunLifecycleStatus = Literal["pending", "running", "completed", "failed"]
+RunLifecycleStatus = Literal["pending", "running", "awaiting_approval", "completed", "failed"]
 PhaseName = Literal["memory", "planning", "shopping", "checkout"]
 PhaseStatus = Literal["pending", "running", "completed", "locked", "failed"]
 RunEventType = Literal[
@@ -19,6 +20,8 @@ RunEventType = Literal[
     "phase_completed",
     "node_entered",
     "node_completed",
+    "approval_requested",
+    "approval_resolved",
     "run_completed",
     "error",
 ]
@@ -138,6 +141,7 @@ class PlannerStateSnapshot(BaseModel):
     nutrition_plan: Optional[NutritionPlan] = None
     selected_meals: List[MealSlot] = Field(default_factory=list)
     grocery_list: List[GroceryItem] = Field(default_factory=list)
+    purchase_orders: List[PurchaseOrder] = Field(default_factory=list)
     fridge_inventory: List[FridgeItemSnapshot] = Field(default_factory=list)
     user_preferences_learned: PreferenceSummary = Field(default_factory=PreferenceSummary)
     retrieved_memories: List[Dict[str, Any]] = Field(default_factory=list)
@@ -151,6 +155,12 @@ class PlannerStateSnapshot(BaseModel):
     current_phase: Optional[PhaseName] = None
     phase_statuses: PhaseStatuses = Field(default_factory=PhaseStatuses)
     replan_count: int = 0
+    human_approved: Optional[bool] = None
+    approval_reason: Optional[str] = None
+    checkout_stage: Optional[CheckoutStage] = None
+    cart_verified: bool = False
+    cart_screenshot_path: Optional[str] = None
+    checkout_retry_count: int = 0
     latest_error: Optional[str] = None
     trace_metadata: TraceMetadata = Field(default_factory=TraceMetadata)
 
@@ -184,6 +194,9 @@ class PlannerStateSnapshot(BaseModel):
             phase_statuses.planning = "completed"
             phase_statuses.shopping = "failed"
         else:
+            phase_statuses.memory = "completed"
+            phase_statuses.planning = "completed"
+            phase_statuses.shopping = "completed"
             phase_statuses.checkout = "failed"
         return self.model_copy(
             update={
@@ -203,12 +216,19 @@ class PlannerStateSnapshot(BaseModel):
                 "run_id": run_id,
                 "status": "running",
                 "grocery_list": [],
+                "purchase_orders": [],
                 "fridge_inventory": [],
                 "critic_verdict": None,
                 "repair_instructions": [],
                 "blocked_recipe_ids": [],
                 "avoid_cuisines": [],
                 "context_metadata": [],
+                "human_approved": None,
+                "approval_reason": None,
+                "checkout_stage": None,
+                "cart_verified": False,
+                "cart_screenshot_path": None,
+                "checkout_retry_count": 0,
                 "current_node": "supervisor",
                 "current_phase": "shopping",
                 "phase_statuses": PhaseStatuses(
@@ -217,6 +237,57 @@ class PlannerStateSnapshot(BaseModel):
                     shopping="running",
                 ),
                 "replan_count": 0,
+                "latest_error": None,
+                "trace_metadata": TraceMetadata(),
+            }
+        )
+
+    def as_checkout_run(
+        self,
+        *,
+        run_id: str,
+        store: str,
+        start_url: str,
+        cart_url: Optional[str] = None,
+        checkout_url: Optional[str] = None,
+        allowed_domains: Optional[List[str]] = None,
+    ) -> "PlannerStateSnapshot":
+        assert self.grocery_list
+        return self.model_copy(
+            update={
+                "run_id": run_id,
+                "status": "running",
+                "critic_verdict": None,
+                "repair_instructions": [],
+                "blocked_recipe_ids": [],
+                "avoid_cuisines": [],
+                "context_metadata": [],
+                "purchase_orders": [
+                    PurchaseOrder(
+                        order_id=run_id + "-order",
+                        store=store,
+                        store_url=start_url,
+                        cart_url=cart_url,
+                        checkout_url=checkout_url,
+                        allowed_domains=list(allowed_domains or []),
+                        requested_items=self.grocery_list,
+                    )
+                ],
+                "current_node": "supervisor",
+                "current_phase": "checkout",
+                "phase_statuses": PhaseStatuses(
+                    memory="completed",
+                    planning="completed",
+                    shopping="completed",
+                    checkout="running",
+                ),
+                "replan_count": 0,
+                "human_approved": None,
+                "approval_reason": None,
+                "checkout_stage": "build_cart",
+                "cart_verified": False,
+                "cart_screenshot_path": None,
+                "checkout_retry_count": 0,
                 "latest_error": None,
                 "trace_metadata": TraceMetadata(),
             }

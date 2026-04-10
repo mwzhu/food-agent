@@ -1,0 +1,73 @@
+{
+  "verified_at": "2026-04-09T17:51:58.381596-07:00",
+  "verified_store_domains": [
+    "ritual.com",
+    "transparentlabs.com",
+    "livemomentous.com"
+  ],
+  "results": [
+    {
+      "store_domain": "ritual.com",
+      "query": "sleep",
+      "verified": true,
+      "search_result_count": 4,
+      "selected_product_title": "Day & Night Support Ritual*",
+      "selected_variant_id": "gid://shopify/ProductVariant/42521592201310",
+      "product_price": "104.0",
+      "currency": "USD",
+      "cart_id": "gid://shopify/Cart/hWNAqNo6KJfBJJHlQ1XAJbom?key=[redacted]",
+      "checkout_url_reachable": true,
+      "checkout_http_status": 200,
+      "checkout_final_url": "https://ritual.com/checkouts/cn/hWNAqNo6KJfBJJHlQ1XAJbom/en?query=[redacted]",
+      "checkout_page_title": "Checkout - Ritual",
+      "checkout_contains_product_title": false,
+      "failure_reason": null,
+      "attempted_products": [
+        "Sleep",
+        "Magnesium+",
+        "Day & Night Support Ritual*"
+      ]
+    },
+    {
+      "store_domain": "transparentlabs.com",
+      "query": "creatine hmb",
+      "verified": true,
+      "search_result_count": 10,
+      "selected_product_title": "Creatine HMB Travel Packs",
+      "selected_variant_id": "gid://shopify/ProductVariant/42859764449373",
+      "product_price": "29.99",
+      "currency": "USD",
+      "cart_id": "gid://shopify/Cart/hWNAqNoIfseYxGPm75tt2ek4?key=[redacted]",
+      "checkout_url_reachable": true,
+      "checkout_http_status": 200,
+      "checkout_final_url": "https://www.transparentlabs.com/checkouts/cn/hWNAqNoIfseYxGPm75tt2ek4/en?query=[redacted]",
+      "checkout_page_title": "Checkout - Transparent Labs",
+      "checkout_contains_product_title": false,
+      "failure_reason": null,
+      "attempted_products": [
+        "Creatine HMB",
+        "Creatine HMB Travel Packs"
+      ]
+    },
+    {
+      "store_domain": "livemomentous.com",
+      "query": "magnesium l-threonate",
+      "verified": true,
+      "search_result_count": 10,
+      "selected_product_title": "Magnesium L-Threonate",
+      "selected_variant_id": "gid://shopify/ProductVariant/41127755251895",
+      "product_price": "49.95",
+      "currency": "USD",
+      "cart_id": "gid://shopify/Cart/hWNAqNoWZcsgp7YKG2uidc9w?key=[redacted]",
+      "checkout_url_reachable": true,
+      "checkout_http_status": 200,
+      "checkout_final_url": "https://www.livemomentous.com/checkouts/cn/hWNAqNoWZcsgp7YKG2uidc9w/en?query=[redacted]",
+      "checkout_page_title": "Checkout - Momentous",
+      "checkout_contains_product_title": false,
+      "failure_reason": null,
+      "attempted_products": [
+        "Magnesium L-Threonate"
+      ]
+    }
+  ]
+}

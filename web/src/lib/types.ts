@@ -14,12 +14,26 @@ export type RunEventType =
   | "phase_completed"
   | "node_entered"
   | "node_completed"
+  | "approval_requested"
+  | "approval_resolved"
   | "run_completed"
   | "error";
 export type PhaseName = "memory" | "planning" | "shopping" | "checkout";
 export type PhaseStatus = "pending" | "running" | "completed" | "locked" | "failed";
-export type RunLifecycleStatus = "pending" | "running" | "completed" | "failed";
+export type RunLifecycleStatus = "pending" | "running" | "awaiting_approval" | "completed" | "failed";
 export type RunStatus = Exclude<RunLifecycleStatus, "pending">;
+export type CheckoutFailureCode =
+  | "cart_build_failed"
+  | "cart_verification_failed"
+  | "budget_guardrail"
+  | "login_required"
+  | "missing_payment_method"
+  | "payment_declined"
+  | "address_required"
+  | "delivery_slot_required"
+  | "bot_protection"
+  | "checkout_navigation_failed"
+  | "unknown";
 
 export interface UserProfileBase {
   age: number;
@@ -132,6 +146,103 @@ export interface GroceryItem {
   source_recipe_ids: string[];
 }
 
+export interface CheckoutCartLineItem {
+  requested_name: string;
+  requested_quantity: number;
+  actual_name: string;
+  actual_quantity: number;
+  unit: string | null;
+  unit_price: number;
+  line_total: number;
+  status: "added" | "missing" | "substituted" | "removed";
+  notes: string;
+  product_url: string | null;
+}
+
+export interface CartDiscrepancy {
+  code: string;
+  message: string;
+  item_name: string | null;
+  expected: string | null;
+  actual: string | null;
+}
+
+export interface CartVerification {
+  passed: boolean;
+  discrepancies: CartDiscrepancy[];
+  subtotal_expected: number | null;
+  subtotal_actual: number | null;
+  delivery_fee_expected: number | null;
+  delivery_fee_actual: number | null;
+}
+
+export interface OrderConfirmation {
+  confirmation_id: string;
+  placed_at: string;
+  total_cost: number;
+  confirmation_url: string | null;
+  confirmation_screenshot_path: string | null;
+  message: string;
+}
+
+export interface PurchaseOrder {
+  order_id: string;
+  store: string;
+  store_url: string;
+  channel: "online" | "in_store";
+  status: "draft" | "awaiting_approval" | "approved" | "purchased" | "failed" | "manual_review";
+  items: CheckoutCartLineItem[];
+  requested_items: GroceryItem[];
+  subtotal: number;
+  delivery_fee: number;
+  total_cost: number;
+  cart_url: string | null;
+  checkout_url: string | null;
+  allowed_domains: string[];
+  cart_screenshot_path: string | null;
+  verification: CartVerification | null;
+  confirmation: OrderConfirmation | null;
+  failure_code: CheckoutFailureCode | null;
+  failure_reason: string | null;
+}
+
+export interface BrowserProfileSyncStatus {
+  store: string;
+  provider: "browser_use_cloud" | "local_browser";
+  configured: boolean;
+  ready: boolean;
+  profile_id: string | null;
+  profile_name: string | null;
+  login_url: string;
+  start_url: string;
+  cookie_domains: string[];
+  last_used_at: string | null;
+  message: string;
+}
+
+export interface BrowserProfileSyncSession {
+  store: string;
+  provider: "browser_use_cloud" | "local_browser";
+  profile_id: string;
+  session_id: string;
+  live_url: string;
+  login_url: string;
+  timeout_at: string;
+  message: string;
+}
+
+export interface WalmartSmokeRunCreateRequest {
+  user_id: string;
+}
+
+export interface InstacartSmokeRunCreateRequest {
+  user_id: string;
+}
+
+export interface ChatgptInstacartSmokeRunCreateRequest {
+  user_id: string;
+}
+
 export interface FridgeItemBase {
   name: string;
   quantity: number;
@@ -214,6 +325,14 @@ export interface NodeCompletedEvent extends BaseRunEvent {
   event_type: "node_completed";
 }
 
+export interface ApprovalRequestedEvent extends BaseRunEvent {
+  event_type: "approval_requested";
+}
+
+export interface ApprovalResolvedEvent extends BaseRunEvent {
+  event_type: "approval_resolved";
+}
+
 export interface RunCompletedEvent extends BaseRunEvent {
   event_type: "run_completed";
   data: {
@@ -230,6 +349,8 @@ export type RunEvent =
   | PhaseCompletedEvent
   | NodeEnteredEvent
   | NodeCompletedEvent
+  | ApprovalRequestedEvent
+  | ApprovalResolvedEvent
   | RunCompletedEvent
   | RunErrorEvent;
 
@@ -240,6 +361,7 @@ export interface PlannerStateSnapshot {
   nutrition_plan: NutritionPlan | null;
   selected_meals: MealSlot[];
   grocery_list: GroceryItem[];
+  purchase_orders: PurchaseOrder[];
   fridge_inventory: FridgeItemSnapshot[];
   user_preferences_learned: PreferenceSummary;
   retrieved_memories: MemorySnapshot[];
@@ -251,6 +373,12 @@ export interface PlannerStateSnapshot {
   current_phase: PhaseName | null;
   phase_statuses: PhaseStatuses;
   replan_count: number;
+  human_approved: boolean | null;
+  approval_reason: string | null;
+  checkout_stage: string | null;
+  cart_verified: boolean;
+  cart_screenshot_path: string | null;
+  checkout_retry_count: number;
   latest_error: string | null;
   trace_metadata: TraceMetadata;
 }
@@ -258,6 +386,26 @@ export interface PlannerStateSnapshot {
 export interface RunCreateRequest {
   user_id: string;
   profile: UserProfileBase;
+}
+
+export interface CheckoutRunCreateRequest {
+  store: string;
+  start_url: string;
+  cart_url?: string | null;
+  checkout_url?: string | null;
+  allowed_domains?: string[];
+}
+
+export interface CheckoutItemEdit {
+  requested_name: string;
+  quantity?: number | null;
+  remove: boolean;
+}
+
+export interface RunResumeRequest {
+  decision: "approve" | "reject";
+  reason?: string | null;
+  edits: CheckoutItemEdit[];
 }
 
 export interface RunRead {

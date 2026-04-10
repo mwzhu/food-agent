@@ -129,6 +129,9 @@ function runStatusBadge(status: RunLifecycleStatus) {
   if (status === "completed") {
     return "success";
   }
+  if (status === "awaiting_approval") {
+    return "secondary";
+  }
   if (status === "failed") {
     return "outline";
   }

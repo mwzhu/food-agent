@@ -81,6 +81,7 @@ class PlannerState(TypedDict, total=False):
     nutrition_plan: NutritionPlanState
     selected_meals: List[MealSlotState]
     grocery_list: List[GroceryItemState]
+    purchase_orders: List[Dict[str, Any]]
     fridge_inventory: List[FridgeItemState]
     user_preferences_learned: Dict[str, Any]
     retrieved_memories: List[Dict[str, Any]]
@@ -94,6 +95,12 @@ class PlannerState(TypedDict, total=False):
     current_phase: PhaseName
     phase_statuses: PhaseStatusesState
     replan_count: int
+    human_approved: Optional[bool]
+    approval_reason: str
+    checkout_stage: str
+    cart_verified: bool
+    cart_screenshot_path: Optional[str]
+    checkout_retry_count: int
     latest_error: str
     trace_metadata: Dict[str, Any]
 
@@ -121,4 +128,23 @@ class ShoppingSubgraphState(TypedDict, total=False):
     selected_meals: List[MealSlotState]
     grocery_list: List[GroceryItemState]
     fridge_inventory: List[FridgeItemState]
+    context_metadata: Annotated[List[Dict[str, Any]], operator.add]
+
+
+class CheckoutSubgraphState(TypedDict, total=False):
+    run_id: str
+    user_id: str
+    user_profile: Dict[str, Any]
+    grocery_list: List[GroceryItemState]
+    purchase_orders: List[Dict[str, Any]]
+    status: RunLifecycleStatus
+    current_node: str
+    current_phase: PhaseName
+    phase_statuses: PhaseStatusesState
+    human_approved: Optional[bool]
+    approval_reason: str
+    checkout_stage: str
+    cart_verified: bool
+    cart_screenshot_path: Optional[str]
+    latest_error: str
     context_metadata: Annotated[List[Dict[str, Any]], operator.add]

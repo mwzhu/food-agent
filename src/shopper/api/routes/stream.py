@@ -31,13 +31,20 @@ async def stream_run_events(
         cursor = 0
         events = run_manager.event_bus.list_events(run_id)
         if not events and snapshot.status != "running":
-            event_type = "run_completed" if snapshot.status == "completed" else "error"
+            if snapshot.status == "awaiting_approval":
+                event_type = "approval_requested"
+            else:
+                event_type = "run_completed" if snapshot.status == "completed" else "error"
             events = [
                 RunEvent(
                     event_id=str(uuid4()),
                     run_id=run_id,
                     event_type=event_type,
-                    message="Run {status}.".format(status=snapshot.status),
+                    message=(
+                        "Cart is ready for approval."
+                        if snapshot.status == "awaiting_approval"
+                        else "Run {status}.".format(status=snapshot.status)
+                    ),
                     phase=snapshot.current_phase,
                     node_name=snapshot.current_node,
                     data={"status": snapshot.status},

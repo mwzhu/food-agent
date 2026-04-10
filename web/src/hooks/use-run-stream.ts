@@ -67,10 +67,13 @@ function isTerminalEvent(event: RunEvent): boolean {
     case "run_completed":
     case "error":
       return true;
+    case "approval_requested":
+      return true;
     case "phase_started":
     case "phase_completed":
     case "node_entered":
     case "node_completed":
+    case "approval_resolved":
       return false;
     default:
       return assertNever(event);
@@ -81,12 +84,15 @@ function deriveRunStatus(event: RunEvent): RunLifecycleStatus {
   switch (event.event_type) {
     case "error":
       return "failed";
+    case "approval_requested":
+      return "awaiting_approval";
     case "run_completed":
       return event.data.status;
     case "phase_started":
     case "phase_completed":
     case "node_entered":
     case "node_completed":
+    case "approval_resolved":
       return "running";
     default:
       return assertNever(event);
@@ -125,6 +131,8 @@ function patchPhaseStatus(currentStatus: PhaseStatus, event: RunEvent): PhaseSta
       return "completed";
     case "node_entered":
     case "node_completed":
+    case "approval_requested":
+    case "approval_resolved":
     case "run_completed":
     case "error":
       return currentStatus;

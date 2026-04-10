@@ -4,6 +4,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useState } from "react";
 
+import { ApprovalGate } from "@/components/checkout/approval-gate";
+import { CartReview } from "@/components/checkout/cart-review";
+import { InstacartCheckoutPanel } from "@/components/checkout/instacart-checkout-panel";
+import { OrderConfirmationCard } from "@/components/checkout/order-confirmation-card";
 import { GroceryList } from "@/components/grocery/grocery-list";
 import { MealCalendar } from "@/components/plan/meal-calendar";
 import { NutritionSummary } from "@/components/plan/nutrition-summary";
@@ -54,10 +58,21 @@ export default function RunDetailPage() {
   const run = runQuery.data;
   const nutritionPlan = run.state_snapshot.nutrition_plan;
   const trace = traceQuery.data;
+  const order = run.state_snapshot.purchase_orders[0] ?? null;
+  const isCheckoutRun = run.state_snapshot.phase_statuses.checkout !== "locked" || Boolean(order);
+  const runLabel = isCheckoutRun
+    ? "Checkout run"
+    : run.state_snapshot.grocery_list.length
+      ? "Shopping run"
+      : "Planning run";
   const canStartShopping =
     run.status !== "running" &&
     run.state_snapshot.selected_meals.length > 0 &&
     run.state_snapshot.grocery_list.length === 0;
+  const canStartCheckout =
+    run.status !== "running" &&
+    run.state_snapshot.grocery_list.length > 0 &&
+    !order;
 
   const startShopping = async () => {
     setShoppingErrorMessage(null);
@@ -79,7 +94,7 @@ export default function RunDetailPage() {
           <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">
             Run detail
           </p>
-          <CardTitle className="text-4xl md:text-5xl">Planning run {run.run_id.slice(0, 8)}</CardTitle>
+          <CardTitle className="text-4xl md:text-5xl">{runLabel} {run.run_id.slice(0, 8)}</CardTitle>
           <p className="max-w-3xl text-base leading-7 text-muted-foreground">
             Created {formatDateTime(run.created_at)} for {run.user_id}. The state below is the
             live Phase 3 artifact returned by the backend worker and streaming layer.
@@ -184,6 +199,47 @@ export default function RunDetailPage() {
                   This run already has meals. Start a shopping-only follow-up run to build the grocery list even if the
                   planning critic blocked the automatic handoff.
                 </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {canStartCheckout ? <InstacartCheckoutPanel runId={runId} /> : null}
+
+          {order ? <CartReview order={order} /> : null}
+
+          {run.status === "awaiting_approval" && order ? <ApprovalGate runId={runId} /> : null}
+
+          {run.status === "running" && isCheckoutRun ? (
+            <Card>
+              <CardHeader>
+                <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Checkout</p>
+                <CardTitle>Checkout is in progress</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  The browser agent is working through Instacart checkout. Keep this page open to follow the order flow.
+                </p>
+              </CardContent>
+            </Card>
+          ) : null}
+
+          {order?.confirmation ? <OrderConfirmationCard confirmation={order.confirmation} /> : null}
+
+          {run.status === "failed" && isCheckoutRun && !order?.confirmation ? (
+            <Card>
+              <CardHeader>
+                <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">Checkout error</p>
+                <CardTitle>Checkout needs attention</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground">
+                  {order?.failure_reason ?? run.state_snapshot.latest_error ?? "Checkout failed before the order could be placed."}
+                </p>
+                {order?.failure_code ? (
+                  <p className="mt-2 text-xs uppercase tracking-[0.16em] text-muted-foreground">
+                    Failure code: {formatLabel(order.failure_code)}
+                  </p>
+                ) : null}
               </CardContent>
             </Card>
           ) : null}

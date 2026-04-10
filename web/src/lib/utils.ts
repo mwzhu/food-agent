@@ -33,10 +33,18 @@ export function formatLabel(value: string): string {
 }
 
 export function formatCurrency(value: number): string {
+  return formatMoney(value, "USD", 0);
+}
+
+export function formatMoney(
+  value: number,
+  currency = "USD",
+  maximumFractionDigits = 2,
+): string {
   return new Intl.NumberFormat("en-US", {
     style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
+    currency,
+    maximumFractionDigits,
   }).format(value);
 }
 

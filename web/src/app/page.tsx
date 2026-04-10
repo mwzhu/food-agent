@@ -161,6 +161,9 @@ export default function DashboardPage() {
               <Button disabled={createRunMutation.isPending} onClick={startRun} type="button">
                 {createRunMutation.isPending ? "Building plan..." : "Start a new run"}
               </Button>
+              <Button asChild variant="secondary">
+                <Link href="/checkout-test">Open checkout lab</Link>
+              </Button>
               <Button asChild variant="outline">
                 <Link href="/profile">Refine profile</Link>
               </Button>

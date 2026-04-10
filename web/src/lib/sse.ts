@@ -8,6 +8,8 @@ const RUN_EVENT_TYPES: RunEventType[] = [
   "phase_completed",
   "node_entered",
   "node_completed",
+  "approval_requested",
+  "approval_resolved",
   "run_completed",
   "error",
 ];

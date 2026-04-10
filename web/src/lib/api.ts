@@ -1,14 +1,26 @@
 import type {
+  BrowserProfileSyncSession,
+  BrowserProfileSyncStatus,
+  ChatgptInstacartSmokeRunCreateRequest,
+  CheckoutRunCreateRequest,
   FridgeItemCreate,
   FridgeItemRead,
   FridgeItemUpdate,
+  InstacartSmokeRunCreateRequest,
   RunCreateRequest,
   RunRead,
+  RunResumeRequest,
   RunTraceRead,
   UserProfileCreate,
   UserProfileRead,
   UserProfileUpdate,
+  WalmartSmokeRunCreateRequest,
 } from "@/lib/types";
+import type {
+  SupplementRunApproveRequest,
+  SupplementRunCreateRequest,
+  SupplementRunRead,
+} from "@/lib/supplement-types";
 
 const API_BASE_URL = (process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000").replace(
   /\/$/,
@@ -124,9 +136,95 @@ export function getRun(runId: string): Promise<RunRead> {
   return request<RunRead>(`/v1/runs/${runId}`);
 }
 
+export function createSupplementRun(payload: SupplementRunCreateRequest): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>("/v1/supplements/runs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getSupplementRun(runId: string): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}`);
+}
+
+export function approveSupplementRun(
+  runId: string,
+  payload: SupplementRunApproveRequest,
+): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/approve`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
 export function createShoppingRun(runId: string): Promise<RunRead> {
   return request<RunRead>(`/v1/runs/${runId}/shopping`, {
     method: "POST",
+  });
+}
+
+export function createCheckoutRun(runId: string, payload: CheckoutRunCreateRequest): Promise<RunRead> {
+  return request<RunRead>(`/v1/runs/${runId}/checkout`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getWalmartProfileSyncStatus(): Promise<BrowserProfileSyncStatus> {
+  return request<BrowserProfileSyncStatus>("/v1/checkout/walmart/profile-sync");
+}
+
+export function createWalmartProfileSyncSession(): Promise<BrowserProfileSyncSession> {
+  return request<BrowserProfileSyncSession>("/v1/checkout/walmart/profile-sync/session", {
+    method: "POST",
+  });
+}
+
+export function createWalmartSmokeRun(payload: WalmartSmokeRunCreateRequest): Promise<RunRead> {
+  return request<RunRead>("/v1/checkout/walmart/smoke-run", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getInstacartProfileSyncStatus(): Promise<BrowserProfileSyncStatus> {
+  return request<BrowserProfileSyncStatus>("/v1/checkout/instacart/profile-sync");
+}
+
+export function createInstacartProfileSyncSession(): Promise<BrowserProfileSyncSession> {
+  return request<BrowserProfileSyncSession>("/v1/checkout/instacart/profile-sync/session", {
+    method: "POST",
+  });
+}
+
+export function createInstacartSmokeRun(payload: InstacartSmokeRunCreateRequest): Promise<RunRead> {
+  return request<RunRead>("/v1/checkout/instacart/smoke-run", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getChatgptProfileSyncStatus(): Promise<BrowserProfileSyncStatus> {
+  return request<BrowserProfileSyncStatus>("/v1/checkout/chatgpt/profile-sync");
+}
+
+export function createChatgptProfileSyncSession(): Promise<BrowserProfileSyncSession> {
+  return request<BrowserProfileSyncSession>("/v1/checkout/chatgpt/profile-sync/session", {
+    method: "POST",
+  });
+}
+
+export function createChatgptInstacartSmokeRun(payload: ChatgptInstacartSmokeRunCreateRequest): Promise<RunRead> {
+  return request<RunRead>("/v1/checkout/chatgpt/instacart/smoke-run", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function resumeRun(runId: string, payload: RunResumeRequest): Promise<RunRead> {
+  return request<RunRead>(`/v1/runs/${runId}/resume`, {
+    method: "POST",
+    body: JSON.stringify(payload),
   });
 }
 
@@ -136,4 +234,8 @@ export function getRunTrace(runId: string): Promise<RunTraceRead> {
 
 export function getRunStreamUrl(runId: string): string {
   return `${API_BASE_URL}/v1/runs/${runId}/stream`;
+}
+
+export function getSupplementRunStreamUrl(runId: string): string {
+  return `${API_BASE_URL}/v1/supplements/runs/${runId}/stream`;
 }

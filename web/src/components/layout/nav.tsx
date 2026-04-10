@@ -10,6 +10,8 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { href: "/", label: "Dashboard" },
+  { href: "/supplements", label: "Supplements" },
+  { href: "/checkout-test", label: "Checkout lab" },
   { href: "/profile", label: "Profile" },
   { href: "/inventory", label: "Inventory" },
   { href: "/runs", label: "Run history" },
@@ -31,10 +33,10 @@ export function Nav() {
         </Link>
         <div>
           <p className="text-[0.72rem] uppercase tracking-[0.18em] text-muted-foreground">
-            Phase 3 planner
+            Planner + supplement lab
           </p>
           <p className="mt-1 text-sm text-muted-foreground">
-            Meal planning plus fridge-aware grocery generation.
+            Meal planning, supplement comparison, and checkout lab testing.
           </p>
         </div>
       </div>

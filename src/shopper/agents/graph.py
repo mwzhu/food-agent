@@ -9,15 +9,16 @@ from langgraph.graph import END, START, StateGraph
 from shopper.agents.events import EventEmitter, bind_event_emitter, emit_run_event
 from shopper.agents.nodes import LoadMemoryNode
 from shopper.agents.replan import derive_replan_feedback
-from shopper.agents.state import PlannerState, PlanningSubgraphState, ShoppingSubgraphState
+from shopper.agents.state import CheckoutSubgraphState, PlannerState, PlanningSubgraphState, ShoppingSubgraphState
 from shopper.agents.subgraphs import (
+    build_checkout_subgraph,
     build_planning_critic_subgraph,
     build_planning_subgraph,
     build_shopping_critic_subgraph,
     build_shopping_subgraph,
 )
 from shopper.agents.supervisor import route_from_critic, route_from_supervisor, supervisor_node
-from shopper.agents.tools import RecipeSearchTool, build_get_fridge_contents_tool
+from shopper.agents.tools import BrowserCheckoutAgent, RecipeSearchTool, build_get_fridge_contents_tool
 from shopper.config import Settings
 from shopper.memory import ContextAssembler, MemoryStore
 from shopper.retrieval import QdrantRecipeStore, RecipeReranker
@@ -43,7 +44,7 @@ def _phase_statuses(
 
 def _graph_invoke_config(state: Dict[str, Any], source: TraceSource) -> Dict[str, Any]:
     metadata = {
-        "phase": "phase3",
+        "phase": "phase5",
         "source": source,
         "shopper_run_id": state["run_id"],
         "user_id": state["user_id"],
@@ -74,7 +75,10 @@ def build_planner_graph(
     session_factory=None,
     reranker=None,
     chat_model=None,
+    settings: Settings | None = None,
+    checkout_agent: BrowserCheckoutAgent | None = None,
 ):
+    resolved_settings = settings or Settings()
     recipe_search = RecipeSearchTool(recipe_store=recipe_store, reranker=reranker or RecipeReranker())
     get_fridge_contents_tool = build_get_fridge_contents_tool(session_factory)
     load_memory_node = LoadMemoryNode(context_assembler=context_assembler, memory_store=memory_store)
@@ -94,6 +98,11 @@ def build_planner_graph(
     )
     shopping_subgraph = build_shopping_subgraph(
         get_fridge_contents_tool=get_fridge_contents_tool,
+    )
+    resolved_checkout_agent = checkout_agent or BrowserCheckoutAgent(resolved_settings)
+    checkout_subgraph = build_checkout_subgraph(
+        checkout_agent=resolved_checkout_agent,
+        settings=resolved_settings,
     )
 
     async def load_memory_wrapper(state: Dict[str, Any]) -> Dict[str, Any]:
@@ -278,11 +287,49 @@ def build_planner_graph(
             "trace_metadata": state["trace_metadata"],
         }
 
+    async def checkout_subgraph_node(state: Dict[str, Any]) -> Dict[str, Any]:
+        await emit_run_event(
+            run_id=state["run_id"],
+            event_type="phase_started",
+            phase="checkout",
+            node_name="checkout_subgraph",
+            message=(
+                "Checkout is resuming after approval."
+                if state.get("checkout_stage") == "complete_checkout"
+                else "Preparing the browser checkout cart."
+            ),
+        )
+        result = await checkout_subgraph.ainvoke(
+            CheckoutSubgraphState(
+                run_id=state["run_id"],
+                user_id=state["user_id"],
+                user_profile=state["user_profile"],
+                grocery_list=state.get("grocery_list", []),
+                purchase_orders=state.get("purchase_orders", []),
+                status=state.get("status", "running"),
+                current_node=state.get("current_node", "checkout_subgraph"),
+                current_phase=state.get("current_phase", "checkout"),
+                phase_statuses=state.get("phase_statuses", _phase_statuses("completed", "completed", "completed", "running")),
+                human_approved=state.get("human_approved"),
+                approval_reason=state.get("approval_reason", ""),
+                checkout_stage=state.get("checkout_stage"),
+                cart_verified=state.get("cart_verified", False),
+                cart_screenshot_path=state.get("cart_screenshot_path"),
+                latest_error=state.get("latest_error", ""),
+                context_metadata=[],
+            )
+        )
+        return {
+            **result,
+            "trace_metadata": state["trace_metadata"],
+        }
+
     graph = StateGraph(PlannerState)
     graph.add_node("supervisor", supervisor_node)
     graph.add_node("load_memory", load_memory_wrapper)
     graph.add_node("planning_subgraph", planning_subgraph_node)
     graph.add_node("shopping_subgraph", shopping_subgraph_node)
+    graph.add_node("checkout_subgraph", checkout_subgraph_node)
     graph.add_node("planning_critic_subgraph", planning_critic_subgraph_node)
     graph.add_node("shopping_critic_subgraph", shopping_critic_subgraph_node)
     graph.add_edge(START, "supervisor")
@@ -293,6 +340,7 @@ def build_planner_graph(
             "load_memory": "load_memory",
             "planning_subgraph": "planning_subgraph",
             "shopping_subgraph": "shopping_subgraph",
+            "checkout_subgraph": "checkout_subgraph",
         },
     )
     graph.add_edge("load_memory", "planning_subgraph")
@@ -308,6 +356,7 @@ def build_planner_graph(
     )
     graph.add_edge("shopping_subgraph", "shopping_critic_subgraph")
     graph.add_edge("shopping_critic_subgraph", END)
+    graph.add_edge("checkout_subgraph", END)
     return graph.compile()
 
 

@@ -5,11 +5,12 @@ from collections import defaultdict
 from typing import Awaitable, Callable, DefaultDict, Dict, List
 
 from fastapi.encoders import jsonable_encoder
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from shopper.agents import invoke_planner_graph
-from shopper.models import PlanRun
-from shopper.schemas import PlannerStateSnapshot, RunEvent
+from shopper.models import AuditLog, OrderItem, PlanRun, PurchaseOrder as PurchaseOrderRecord
+from shopper.schemas import PlannerStateSnapshot, PurchaseOrder, RunEvent
 
 
 class RunEventBus:
@@ -97,4 +98,87 @@ class RunManager:
                 return
             plan_run.status = status
             plan_run.state_snapshot = jsonable_encoder(state_snapshot)
+            await self._sync_orders(session, plan_run, PlannerStateSnapshot.model_validate(state_snapshot))
+            await self._sync_audit_logs(session, run_id=plan_run.run_id, user_id=plan_run.user_id)
             await session.commit()
+
+    async def persist_run_events(self, run_id: str) -> None:
+        async with self.session_factory() as session:
+            plan_run = await session.get(PlanRun, run_id)
+            if plan_run is None:
+                return
+            await self._sync_audit_logs(session, run_id=run_id, user_id=plan_run.user_id)
+            await session.commit()
+
+    async def _sync_orders(
+        self,
+        session: AsyncSession,
+        plan_run: PlanRun,
+        snapshot: PlannerStateSnapshot,
+    ) -> None:
+        existing_order_ids = (
+            await session.execute(
+                select(PurchaseOrderRecord.order_id).where(PurchaseOrderRecord.run_id == plan_run.run_id)
+            )
+        ).scalars().all()
+        if existing_order_ids:
+            await session.execute(delete(OrderItem).where(OrderItem.order_id.in_(existing_order_ids)))
+            await session.execute(delete(PurchaseOrderRecord).where(PurchaseOrderRecord.order_id.in_(existing_order_ids)))
+
+        for order_payload in snapshot.purchase_orders:
+            order = PurchaseOrder.model_validate(order_payload)
+            session.add(
+                PurchaseOrderRecord(
+                    order_id=order.order_id,
+                    run_id=plan_run.run_id,
+                    user_id=plan_run.user_id,
+                    store=order.store,
+                    store_url=order.store_url,
+                    channel=order.channel,
+                    status=order.status,
+                    subtotal=order.subtotal,
+                    delivery_fee=order.delivery_fee,
+                    total_cost=order.total_cost,
+                    cart_url=order.cart_url,
+                    checkout_url=order.checkout_url,
+                    cart_screenshot_path=order.cart_screenshot_path,
+                    failure_reason=order.failure_reason,
+                    verification_json=order.verification.model_dump(mode="json") if order.verification else {},
+                    confirmation_json=order.confirmation.model_dump(mode="json") if order.confirmation else {},
+                )
+            )
+            for item in order.items:
+                session.add(
+                    OrderItem(
+                        order_id=order.order_id,
+                        requested_name=item.requested_name,
+                        actual_name=item.actual_name,
+                        requested_quantity=item.requested_quantity,
+                        actual_quantity=item.actual_quantity,
+                        unit=item.unit,
+                        unit_price=item.unit_price,
+                        line_total=item.line_total,
+                        status=item.status,
+                        notes=item.notes,
+                        product_url=item.product_url,
+                    )
+                )
+
+    async def _sync_audit_logs(self, session: AsyncSession, *, run_id: str, user_id: str) -> None:
+        await session.execute(delete(AuditLog).where(AuditLog.run_id == run_id))
+        for event in self.event_bus.list_events(run_id):
+            session.add(
+                AuditLog(
+                    run_id=run_id,
+                    user_id=user_id,
+                    agent="planner",
+                    action=event.event_type,
+                    phase=event.phase,
+                    node_name=event.node_name,
+                    input_summary={"message": event.message},
+                    output_summary=event.data,
+                    screenshot_path=event.data.get("cart_screenshot_path")
+                    if isinstance(event.data, dict)
+                    else None,
+                )
+            )
