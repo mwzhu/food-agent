@@ -10,3 +10,4 @@ web/.next/
 web/node_modules/
 npm-debug.log*
 data/recipes/full_dataset.csv
+data/browser_profiles/**/Code Cache/
