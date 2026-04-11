@@ -91,3 +91,57 @@
     @apply w-full appearance-none bg-transparent outline-none;
   }
 }
+
+@layer components {
+  .v1-theme {
+    --background: #fcfcfc;
+    --foreground: #000000;
+    --card: #ffffff;
+    --card-foreground: #000000;
+    --popover: #ffffff;
+    --popover-foreground: #000000;
+    --primary: #000000;
+    --primary-foreground: #ffffff;
+    --secondary: #f7f8fa;
+    --secondary-foreground: #000000;
+    --muted: #f7f8fa;
+    --muted-foreground: rgba(0, 0, 0, 0.54);
+    --accent: #f3f4f6;
+    --accent-foreground: #000000;
+    --border: #eaeaea;
+    --input: #e7e7e6;
+    --ring: #000000;
+    --success: #589f72;
+    --success-soft: #e7ffee;
+    --chart-1: #589f72;
+    --chart-2: #6eafff;
+    --chart-3: #f0a442;
+    --radius: 1rem;
+    --font-display: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-serif-display: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --font-sans-body: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    --button-shadow: rgba(0, 0, 0, 0.12);
+    --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.08);
+  }
+
+  .v1-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+  }
+
+  .v1-scrollbar::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  .v1-scrollbar::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.12);
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background-clip: content-box;
+  }
+
+  .v1-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}

@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Fraunces, Manrope } from "next/font/google";
 
-import { Nav } from "@/components/layout/nav";
+import { AppFrame } from "@/components/layout/app-frame";
 import { Providers } from "@/components/layout/providers";
 
 import "./globals.css";
@@ -26,10 +26,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en">
       <body className={`${fraunces.variable} ${manrope.variable} min-h-screen`}>
         <Providers>
-          <div className="min-h-screen px-3 py-4 md:px-5">
-            <Nav />
-            <main className="mx-auto max-w-7xl px-0 py-4 md:py-6">{children}</main>
-          </div>
+          <AppFrame>{children}</AppFrame>
         </Providers>
       </body>
     </html>
