@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from shopper.supplements.schemas.product import ShopifyProduct
 
@@ -114,3 +114,30 @@ class StoreCart(BaseModel):
             errors=list(getattr(cart, "errors", []) or []),
             instructions=getattr(cart, "instructions", None),
         )
+
+
+class StoreCartQuantityUpdate(BaseModel):
+    store_domain: str = Field(min_length=1)
+    quantity: int = Field(ge=1)
+    line_id: Optional[str] = None
+    variant_id: Optional[str] = None
+    product_id: Optional[str] = None
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    @field_validator("line_id", "variant_id", "product_id", mode="before")
+    @classmethod
+    def _coerce_optional_ids(cls, value: Any) -> Any:
+        return _blank_to_none(value)
+
+    @model_validator(mode="after")
+    def _require_identifier(self) -> "StoreCartQuantityUpdate":
+        if not self.line_id and not self.variant_id and not self.product_id:
+            raise ValueError("line_id, variant_id, or product_id is required")
+        return self
+
+
+class SupplementCartUpdateRequest(BaseModel):
+    updates: list[StoreCartQuantityUpdate] = Field(min_length=1)
+
+    model_config = ConfigDict(str_strip_whitespace=True)

@@ -5,7 +5,7 @@ import logging
 import platform
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal, Optional, Protocol
+from typing import Any, Awaitable, Callable, Literal, Optional, Protocol
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
@@ -25,6 +25,18 @@ from shopper.schemas import (
 from shopper.services.browser_profile_manager import is_cloud_session_limit_error, stop_active_cloud_browser_sessions
 
 logger = logging.getLogger(__name__)
+
+
+BrowserAutomationStatusCallback = Callable[[dict[str, Any]], Awaitable[None] | None]
+
+
+@dataclass(frozen=True)
+class _BrowserRetryAttempt:
+    label: str
+    use_cloud: bool
+    disable_cloud_proxy: bool = False
+    cloud_proxy_country_code: str | None = None
+    status_text: str = ""
 
 
 class BrowserUseUnavailableError(RuntimeError):
@@ -92,6 +104,9 @@ class CheckoutAutomationBackend(Protocol):
         request: StandaloneCheckoutRequest,
         order: PurchaseOrder,
         artifact_dir: Path,
+        *,
+        task_override: Optional[str] = None,
+        status_callback: BrowserAutomationStatusCallback | None = None,
     ) -> OrderConfirmation:
         ...
 
@@ -129,10 +144,57 @@ def _normalize_artifact_dir(root: Path, label: str) -> Path:
     return artifact_dir
 
 
+def _normalize_csv_values(value: str | None) -> list[str]:
+    if not value:
+        return []
+
+    normalized: list[str] = []
+    seen: set[str] = set()
+    for item in value.split(","):
+        candidate = item.strip().lower()
+        if not candidate or candidate in seen:
+            continue
+        normalized.append(candidate)
+        seen.add(candidate)
+    return normalized
+
+
 def _require_browser_use() -> None:
     available, reason = browser_use_runtime_status()
     if not available:
         raise BrowserUseUnavailableError(reason or "browser-use is unavailable.")
+
+
+async def _emit_browser_status(
+    status_callback: BrowserAutomationStatusCallback | None,
+    payload: dict[str, Any],
+) -> None:
+    if status_callback is None:
+        return
+
+    result = status_callback(payload)
+    if result is not None:
+        await result
+
+
+def _install_cloud_live_url_callback(browser: object, status_callback: BrowserAutomationStatusCallback) -> None:
+    """Capture Browser Use Cloud's live viewer URL without changing the agent API."""
+    from browser_use.browser.cloud.cloud import CloudBrowserClient
+
+    class LiveUrlCapturingCloudBrowserClient(CloudBrowserClient):
+        async def create_browser(self, request, extra_headers=None):  # type: ignore[no-untyped-def]
+            response = await super().create_browser(request, extra_headers=extra_headers)
+            await _emit_browser_status(
+                status_callback,
+                {
+                    "type": "browser_live_url",
+                    "live_url": response.liveUrl,
+                    "cloud_browser_session_id": response.id,
+                },
+            )
+            return response
+
+    browser._cloud_browser_client = LiveUrlCapturingCloudBrowserClient()  # type: ignore[attr-defined]
 
 
 class BrowserUseCheckoutBackend:
@@ -170,11 +232,7 @@ class BrowserUseCheckoutBackend:
         return ChatAnthropic(model=self.settings.resolved_llm_model, api_key=self.settings.anthropic_api_key)
 
     def _should_retry_without_proxy(self, exc: Exception) -> bool:
-        return (
-            self.settings.browser_checkout_use_cloud
-            and bool(self.settings.browser_checkout_cloud_proxy_country_code)
-            and "ERR_TUNNEL_CONNECTION_FAILED" in str(exc)
-        )
+        return self.settings.browser_checkout_use_cloud and self._is_tunnel_failure(exc)
 
     def _should_retry_after_session_cleanup(self, exc: Exception) -> bool:
         return self.settings.browser_checkout_use_cloud and is_cloud_session_limit_error(exc)
@@ -192,6 +250,50 @@ class BrowserUseCheckoutBackend:
             if "err_tunnel_connection_failed" in str(final_result or "").lower():
                 return True
         return False
+
+    @staticmethod
+    def _is_tunnel_failure(value: object) -> bool:
+        return "err_tunnel_connection_failed" in str(value or "").lower()
+
+    def _cloud_retry_attempts(self, request: StandaloneCheckoutRequest) -> list[_BrowserRetryAttempt]:
+        if not self._uses_cloud_browser(request):
+            return []
+
+        attempts: list[_BrowserRetryAttempt] = []
+        primary_country = (self.settings.browser_checkout_cloud_proxy_country_code or "").strip().lower()
+        if primary_country:
+            attempts.append(
+                _BrowserRetryAttempt(
+                    label="proxy-fallback",
+                    use_cloud=True,
+                    disable_cloud_proxy=True,
+                    status_text="Cloud proxy failed. Retrying Browser Use Cloud without a proxy...",
+                )
+            )
+
+        fallback_countries = _normalize_csv_values(self.settings.browser_checkout_cloud_fallback_proxy_country_codes)
+        for country_code in fallback_countries:
+            if country_code == primary_country:
+                continue
+            attempts.append(
+                _BrowserRetryAttempt(
+                    label=f"proxy-{country_code}-fallback",
+                    use_cloud=True,
+                    cloud_proxy_country_code=country_code,
+                    status_text=f"Retrying Browser Use Cloud through the {country_code.upper()} network...",
+                )
+            )
+
+        if self.settings.browser_checkout_allow_local_fallback:
+            attempts.append(
+                _BrowserRetryAttempt(
+                    label="local-browser-fallback",
+                    use_cloud=False,
+                    status_text="Cloud browser could not reach this store. Falling back to a local browser window...",
+                )
+            )
+
+        return attempts
 
     @staticmethod
     def _infer_checkout_failure(final_result: object) -> tuple[str, CheckoutFailureCode]:
@@ -218,11 +320,14 @@ class BrowserUseCheckoutBackend:
         allowed_domains: list[str],
         *,
         disable_cloud_proxy: bool = False,
+        use_cloud_override: bool | None = None,
+        cloud_proxy_country_code_override: str | None = None,
+        status_callback: BrowserAutomationStatusCallback | None = None,
     ):
         _require_browser_use()
         from browser_use import Browser
 
-        use_cloud_browser = self._uses_cloud_browser(request)
+        use_cloud_browser = self._uses_cloud_browser(request) if use_cloud_override is None else use_cloud_override
 
         if use_cloud_browser and not self.settings.browser_use_api_key:
             raise BrowserUseUnavailableError(
@@ -230,7 +335,9 @@ class BrowserUseCheckoutBackend:
             )
 
         cloud_proxy_country_code = None
-        if use_cloud_browser and not disable_cloud_proxy and self._should_use_cloud_proxy(request):
+        if use_cloud_browser and not disable_cloud_proxy and cloud_proxy_country_code_override:
+            cloud_proxy_country_code = cloud_proxy_country_code_override
+        elif use_cloud_browser and not disable_cloud_proxy and self._should_use_cloud_proxy(request):
             cloud_proxy_country_code = self.settings.browser_checkout_cloud_proxy_country_code or None
 
         user_data_dir = self.settings.browser_checkout_user_data_dir or None
@@ -242,7 +349,7 @@ class BrowserUseCheckoutBackend:
             use_cloud=use_cloud_browser,
             cloud_profile_id=self.settings.browser_checkout_cloud_profile_id if use_cloud_browser else None,
             cloud_proxy_country_code=cloud_proxy_country_code,
-            cloud_timeout=self.settings.browser_checkout_cloud_timeout_minutes,
+            cloud_timeout=self.settings.browser_checkout_cloud_timeout_minutes if use_cloud_browser else None,
             user_data_dir=user_data_dir,
             storage_state=self.settings.browser_checkout_storage_state_path or None,
             allowed_domains=allowed_domains or None,
@@ -250,6 +357,8 @@ class BrowserUseCheckoutBackend:
             traces_dir=str(artifact_dir / "traces"),
             captcha_solver=self.settings.browser_checkout_captcha_solver,
         )
+        if use_cloud_browser and status_callback is not None:
+            _install_cloud_live_url_callback(browser, status_callback)
         return browser
 
     async def _run_agent_once(
@@ -260,7 +369,10 @@ class BrowserUseCheckoutBackend:
         request: StandaloneCheckoutRequest,
         *,
         disable_cloud_proxy: bool = False,
+        use_cloud_override: bool | None = None,
+        cloud_proxy_country_code_override: str | None = None,
         preflight_url: Optional[str] = None,
+        status_callback: BrowserAutomationStatusCallback | None = None,
     ):
         _require_browser_use()
         from browser_use import Agent
@@ -270,10 +382,14 @@ class BrowserUseCheckoutBackend:
             artifact_dir,
             request.store.allowed_domains,
             disable_cloud_proxy=disable_cloud_proxy,
+            use_cloud_override=use_cloud_override,
+            cloud_proxy_country_code_override=cloud_proxy_country_code_override,
+            status_callback=status_callback,
         )
+        attempt_uses_cloud = self._uses_cloud_browser(request) if use_cloud_override is None else use_cloud_override
         history_path = artifact_dir / "conversation.json"
         try:
-            if preflight_url and self._uses_cloud_browser(request):
+            if preflight_url and attempt_uses_cloud:
                 await browser.start()
                 await browser.navigate_to(preflight_url)
 
@@ -303,6 +419,7 @@ class BrowserUseCheckoutBackend:
         request: StandaloneCheckoutRequest,
         *,
         preflight_url: Optional[str] = None,
+        status_callback: BrowserAutomationStatusCallback | None = None,
     ):
         try:
             history = await self._run_agent_once(
@@ -311,6 +428,7 @@ class BrowserUseCheckoutBackend:
                 output_schema,
                 request,
                 preflight_url=preflight_url,
+                status_callback=status_callback,
             )
         except Exception as exc:
             if self._uses_cloud_browser(request) and self._should_retry_after_session_cleanup(exc):
@@ -325,6 +443,7 @@ class BrowserUseCheckoutBackend:
                         output_schema,
                         request,
                         preflight_url=preflight_url,
+                        status_callback=status_callback,
                     )
                 except Exception as retry_exc:
                     exc = retry_exc
@@ -334,15 +453,14 @@ class BrowserUseCheckoutBackend:
             if exc is None:
                 pass
             elif self._uses_cloud_browser(request) and self._should_retry_without_proxy(exc):
-                logger.warning("Retrying Browser Use cloud session without proxy after tunnel failure.")
-                fallback_dir = _normalize_artifact_dir(artifact_dir, "proxy-fallback")
-                return await self._run_agent_once(
+                return await self._run_cloud_fallback_attempts(
                     task,
-                    fallback_dir,
+                    artifact_dir,
                     output_schema,
                     request,
-                    disable_cloud_proxy=True,
                     preflight_url=preflight_url,
+                    status_callback=status_callback,
+                    original_error=exc,
                 )
 
             if exc is not None:
@@ -351,20 +469,105 @@ class BrowserUseCheckoutBackend:
         if (
             self._uses_cloud_browser(request)
             and self._history_contains_tunnel_failure(history)
-            and bool(self.settings.browser_checkout_cloud_proxy_country_code)
         ):
-            logger.warning("Browser Use cloud session reported tunnel failure; retrying without proxy.")
-            fallback_dir = _normalize_artifact_dir(artifact_dir, "proxy-fallback")
-            return await self._run_agent_once(
+            logger.warning("Browser Use cloud session reported tunnel failure; starting fallback ladder.")
+            return await self._run_cloud_fallback_attempts(
                 task,
-                fallback_dir,
+                artifact_dir,
                 output_schema,
                 request,
-                disable_cloud_proxy=True,
                 preflight_url=preflight_url,
+                status_callback=status_callback,
+                original_error=RuntimeError("Browser Use cloud session reported ERR_TUNNEL_CONNECTION_FAILED."),
             )
 
         return history
+
+    async def _run_cloud_fallback_attempts(
+        self,
+        task: str,
+        artifact_dir: Path,
+        output_schema,
+        request: StandaloneCheckoutRequest,
+        *,
+        preflight_url: Optional[str] = None,
+        status_callback: BrowserAutomationStatusCallback | None = None,
+        original_error: Exception | None = None,
+    ):
+        attempts = self._cloud_retry_attempts(request)
+        last_error = original_error
+
+        for attempt in attempts:
+            logger.warning("Browser checkout fallback attempt: %s", attempt.label)
+            await _emit_browser_status(
+                status_callback,
+                {
+                    "type": "browser_attempt",
+                    "view_mode": "cloud" if attempt.use_cloud else "local",
+                    "proxy_country_code": attempt.cloud_proxy_country_code,
+                    "status_text": attempt.status_text,
+                    "attempt_label": attempt.label,
+                },
+            )
+            try:
+                history = await self._run_agent_once(
+                    task,
+                    _normalize_artifact_dir(artifact_dir, attempt.label),
+                    output_schema,
+                    request,
+                    disable_cloud_proxy=attempt.disable_cloud_proxy,
+                    use_cloud_override=attempt.use_cloud,
+                    cloud_proxy_country_code_override=attempt.cloud_proxy_country_code,
+                    preflight_url=preflight_url,
+                    status_callback=status_callback,
+                )
+            except Exception as exc:
+                last_error = exc
+                if attempt.use_cloud and self._should_retry_after_session_cleanup(exc):
+                    stopped = await self._stop_active_cloud_sessions()
+                    logger.warning(
+                        "Browser Use cloud session limit reached during %s; stopped %s active sessions and retrying.",
+                        attempt.label,
+                        stopped,
+                    )
+                    try:
+                        history = await self._run_agent_once(
+                            task,
+                            _normalize_artifact_dir(artifact_dir, f"{attempt.label}-session-cleanup"),
+                            output_schema,
+                            request,
+                            disable_cloud_proxy=attempt.disable_cloud_proxy,
+                            use_cloud_override=attempt.use_cloud,
+                            cloud_proxy_country_code_override=attempt.cloud_proxy_country_code,
+                            preflight_url=preflight_url,
+                            status_callback=status_callback,
+                        )
+                    except Exception as retry_exc:
+                        last_error = retry_exc
+                    else:
+                        if attempt.use_cloud and self._history_contains_tunnel_failure(history):
+                            last_error = RuntimeError("Browser Use cloud session reported ERR_TUNNEL_CONNECTION_FAILED.")
+                            continue
+                        return history
+
+                if attempt.use_cloud and self._is_tunnel_failure(exc):
+                    continue
+                if not attempt.use_cloud and self._is_tunnel_failure(exc):
+                    continue
+                raise
+
+            if attempt.use_cloud and self._history_contains_tunnel_failure(history):
+                last_error = RuntimeError("Browser Use cloud session reported ERR_TUNNEL_CONNECTION_FAILED.")
+                continue
+
+            return history
+
+        if last_error is not None:
+            raise last_error
+        raise CheckoutFlowError(
+            "Checkout browser could not reach the merchant after all fallback attempts.",
+            code="checkout_navigation_failed",
+        )
 
     async def build_cart(self, request: StandaloneCheckoutRequest, artifact_dir: Path) -> CartBuildResult:
         task = self._build_cart_task(request)
@@ -440,15 +643,19 @@ class BrowserUseCheckoutBackend:
         request: StandaloneCheckoutRequest,
         order: PurchaseOrder,
         artifact_dir: Path,
+        *,
+        task_override: Optional[str] = None,
+        status_callback: BrowserAutomationStatusCallback | None = None,
     ) -> OrderConfirmation:
         destination = order.checkout_url or request.store.checkout_url or order.cart_url or request.store.start_url
-        task = self._build_checkout_task(request, order)
+        task = task_override or self._build_checkout_task(request, order)
         history = await self._run_agent(
             task,
             artifact_dir,
             _BrowserUseConfirmationSnapshot,
             request,
             preflight_url=destination,
+            status_callback=status_callback,
         )
         structured = history.get_structured_output(_BrowserUseConfirmationSnapshot)
         if structured is None:
@@ -609,8 +816,17 @@ class CheckoutAutomationRouter:
         request: StandaloneCheckoutRequest,
         order: PurchaseOrder,
         artifact_dir: Path,
+        *,
+        task_override: Optional[str] = None,
+        status_callback: BrowserAutomationStatusCallback | None = None,
     ) -> OrderConfirmation:
-        return await self._backend_for(request).complete_checkout(request, order, artifact_dir)
+        return await self._backend_for(request).complete_checkout(
+            request,
+            order,
+            artifact_dir,
+            task_override=task_override,
+            status_callback=status_callback,
+        )
 
 
 @dataclass

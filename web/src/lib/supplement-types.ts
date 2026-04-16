@@ -13,6 +13,18 @@ export type SupplementPhaseStatus = "pending" | "running" | "completed" | "locke
 export type SupplementRunLifecycleStatus = "pending" | "running" | "awaiting_approval" | "completed" | "failed";
 export type SupplementCriticDecision = "passed" | "manual_review_needed" | "failed";
 export type SupplementCriticConcern = "safety" | "goal_alignment" | "value";
+export type SupplementCheckoutSessionStatus =
+  | "pending"
+  | "awaiting_buyer_profile"
+  | "preparing_checkout"
+  | "embedded_ready"
+  | "agent_running"
+  | "external_handoff"
+  | "order_pending_confirmation"
+  | "order_placed"
+  | "cancelled"
+  | "failed";
+export type SupplementCheckoutPresentationMode = "iframe" | "external" | "agent";
 
 export interface HealthProfile {
   age: number;
@@ -155,6 +167,18 @@ export interface StoreCart {
   instructions: string | null;
 }
 
+export interface StoreCartQuantityUpdate {
+  store_domain: string;
+  quantity: number;
+  line_id?: string | null;
+  variant_id?: string | null;
+  product_id?: string | null;
+}
+
+export interface SupplementCartUpdateRequest {
+  updates: StoreCartQuantityUpdate[];
+}
+
 export interface SupplementCriticFinding {
   concern: SupplementCriticConcern;
   severity: "issue" | "warning";
@@ -184,6 +208,94 @@ export interface SupplementTraceMetadata {
   source: string | null;
 }
 
+export interface ShippingAddress {
+  line1: string | null;
+  line2: string | null;
+  city: string | null;
+  state: string | null;
+  postal_code: string | null;
+  country_code: string;
+}
+
+export interface SupplementBuyerProfileSnapshot {
+  user_id: string | null;
+  email: string | null;
+  shipping_name: string | null;
+  shipping_city: string | null;
+  shipping_country: string | null;
+  consent_granted: boolean;
+  ready: boolean;
+  autopurchase_enabled: boolean;
+  max_order_total: number | null;
+  max_monthly_total: number | null;
+  shop_pay_linked: boolean;
+  last_payment_authorization_at: string | null;
+  updated_at: string | null;
+}
+
+export interface SupplementBuyerProfileUpsertRequest {
+  email: string | null;
+  shipping_name: string | null;
+  shipping_address: ShippingAddress;
+  billing_same_as_shipping: boolean;
+  billing_country: string;
+  consent_granted: boolean;
+  autopurchase_enabled: boolean;
+  max_order_total: number | null;
+  max_monthly_total: number | null;
+  shop_pay_linked: boolean;
+  shop_pay_last_verified_at?: string | null;
+  last_payment_authorization_at?: string | null;
+  consent_version: string;
+}
+
+export interface SupplementBuyerProfileRead extends SupplementBuyerProfileUpsertRequest {
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SupplementOrderConfirmation {
+  confirmation_id: string;
+  store_domain: string;
+  message: string;
+  placed_at: string;
+  order_total: number | null;
+  currency: string | null;
+  confirmation_url: string | null;
+  line_items: SupplementOrderConfirmationLine[];
+}
+
+export interface SupplementOrderConfirmationLine {
+  title: string;
+  quantity: number;
+  variant_title: string | null;
+  total_amount: number | null;
+  currency: string | null;
+}
+
+export interface SupplementCheckoutSessionRead {
+  session_id: string;
+  run_id: string;
+  store_domain: string;
+  status: SupplementCheckoutSessionStatus;
+  checkout_mcp_session_id: string | null;
+  continue_url: string | null;
+  fallback_url: string | null;
+  payment_handlers: string[];
+  shop_pay_supported: boolean;
+  requires_escalation: boolean;
+  presentation_mode: SupplementCheckoutPresentationMode;
+  embedded_state_payload: Record<string, unknown>;
+  order_confirmation: SupplementOrderConfirmation | null;
+  order_total: number | null;
+  currency: string | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
 export interface SupplementStateSnapshot {
   run_id: string;
   user_id: string;
@@ -195,6 +307,14 @@ export interface SupplementStateSnapshot {
   critic_verdict: SupplementCriticVerdict | null;
   store_carts: StoreCart[];
   approved_store_domains: string[];
+  buyer_profile: SupplementBuyerProfileSnapshot | null;
+  buyer_profile_ready: boolean;
+  checkout_sessions: SupplementCheckoutSessionRead[];
+  active_checkout_store: string | null;
+  continue_url: string | null;
+  payment_handlers: string[];
+  order_confirmations: SupplementOrderConfirmation[];
+  fallback_reason: string | null;
   status: SupplementRunLifecycleStatus;
   current_node: string;
   current_phase: SupplementPhaseName | null;
@@ -211,6 +331,57 @@ export interface SupplementRunCreateRequest {
 
 export interface SupplementRunApproveRequest {
   approved_store_domains: string[];
+}
+
+export interface SupplementCheckoutStartRequest {
+  store_domains: string[];
+}
+
+export interface PaymentCredentials {
+  card_number: string;
+  card_expiry: string;
+  card_cvv: string;
+  card_name: string;
+}
+
+export interface AgentCheckoutStartRequest {
+  store_domains: string[];
+  payment_credentials: PaymentCredentials;
+  simulate_success: boolean;
+}
+
+export interface SupplementCheckoutContinueRequest {
+  action: "open_fallback" | "mark_order_placed";
+  confirmation_url?: string | null;
+  message?: string | null;
+  order_total?: number | null;
+  currency?: string | null;
+}
+
+export interface SupplementCheckoutCancelRequest {
+  reason?: string | null;
+}
+
+export interface SupplementCheckoutEmbedSpikeRequest {
+  store_domain: string;
+  query: string;
+}
+
+export interface SupplementCheckoutEmbedSpikeRead {
+  store_domain: string;
+  query: string;
+  selected_product_title: string | null;
+  selected_variant_id: string | null;
+  checkout_url: string | null;
+  final_url: string | null;
+  status_code: number | null;
+  iframe_allowed: boolean;
+  block_reason: string | null;
+  x_frame_options: string | null;
+  content_security_policy: string | null;
+  frame_ancestors: string[];
+  allowed_embed_origins: string[];
+  error: string | null;
 }
 
 export interface SupplementRunRead {

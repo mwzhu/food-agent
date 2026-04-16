@@ -84,6 +84,12 @@ class Settings(BaseSettings):
     browser_checkout_headless: bool = Field(default=True, alias="SHOPPER_BROWSER_CHECKOUT_HEADLESS")
     browser_checkout_max_steps: int = Field(default=80, alias="SHOPPER_BROWSER_CHECKOUT_MAX_STEPS", ge=1, le=500)
     browser_checkout_use_cloud: bool = Field(default=False, alias="SHOPPER_BROWSER_CHECKOUT_USE_CLOUD")
+    browser_checkout_parallel_stores: int = Field(
+        default=2,
+        alias="SHOPPER_BROWSER_CHECKOUT_PARALLEL_STORES",
+        ge=1,
+        le=6,
+    )
     browser_checkout_cloud_profile_id: Optional[str] = Field(
         default=None,
         alias="SHOPPER_BROWSER_CHECKOUT_CLOUD_PROFILE_ID",
@@ -91,6 +97,14 @@ class Settings(BaseSettings):
     browser_checkout_cloud_proxy_country_code: Optional[str] = Field(
         default=None,
         alias="SHOPPER_BROWSER_CHECKOUT_CLOUD_PROXY_COUNTRY_CODE",
+    )
+    browser_checkout_cloud_fallback_proxy_country_codes: str = Field(
+        default="",
+        alias="SHOPPER_BROWSER_CHECKOUT_CLOUD_FALLBACK_PROXY_COUNTRY_CODES",
+    )
+    browser_checkout_allow_local_fallback: bool = Field(
+        default=False,
+        alias="SHOPPER_BROWSER_CHECKOUT_ALLOW_LOCAL_FALLBACK",
     )
     browser_checkout_cloud_timeout_minutes: Optional[int] = Field(
         default=None,
@@ -116,6 +130,16 @@ class Settings(BaseSettings):
     )
     browser_checkout_model: Optional[str] = Field(default=None, alias="SHOPPER_BROWSER_CHECKOUT_MODEL")
     chatgpt_checkout_start_url: str = Field(default="https://chatgpt.com/", alias="SHOPPER_CHATGPT_CHECKOUT_START_URL")
+    shopify_mcp_client_id: Optional[str] = Field(default=None, alias="SHOPIFY_MCP_CLIENT_ID")
+    shopify_mcp_client_secret: Optional[str] = Field(default=None, alias="SHOPIFY_MCP_CLIENT_SECRET")
+    shopify_mcp_token_refresh_skew_s: int = Field(default=60, alias="SHOPIFY_MCP_TOKEN_REFRESH_SKEW_S", ge=0)
+    shopify_ucp_profile_url: Optional[str] = Field(default=None, alias="SHOPIFY_UCP_PROFILE_URL")
+    shopify_shop_pay_client_id: Optional[str] = Field(default=None, alias="SHOPIFY_SHOP_PAY_CLIENT_ID")
+    shopify_mcp_enabled: bool = Field(default=False, alias="SHOPIFY_MCP_ENABLED")
+    shopify_checkout_embed_mode: Literal["auto", "iframe", "external"] = Field(
+        default="auto",
+        alias="SHOPIFY_CHECKOUT_EMBED_MODE",
+    )
     browser_use_api_key: Optional[str] = Field(default=None, alias="BROWSER_USE_API_KEY")
     openai_api_key: Optional[str] = Field(default=None, alias="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(default=None, alias="ANTHROPIC_API_KEY")

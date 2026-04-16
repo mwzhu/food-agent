@@ -2,6 +2,7 @@
 
 import { BrowserUseSmokeTest } from "@/components/checkout/browser-use-smoke-test";
 import { ChatgptInstacartLab } from "@/components/checkout/chatgpt-instacart-lab";
+import { ShopifyEmbedLab } from "@/components/checkout/shopify-embed-lab";
 import { Card, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -20,11 +21,16 @@ export default function CheckoutTestPage() {
         </CardHeader>
       </Card>
 
-      <Tabs defaultValue="chatgpt">
-        <TabsList className="md:grid-cols-2">
+      <Tabs defaultValue="shopify">
+        <TabsList className="md:grid-cols-3">
+          <TabsTrigger value="shopify">Shopify embed lab</TabsTrigger>
           <TabsTrigger value="chatgpt">ChatGPT + Instacart</TabsTrigger>
           <TabsTrigger value="browser">Browser Use</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="shopify">
+          <ShopifyEmbedLab />
+        </TabsContent>
 
         <TabsContent value="chatgpt">
           <ChatgptInstacartLab />

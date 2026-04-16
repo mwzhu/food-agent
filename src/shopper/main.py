@@ -90,10 +90,12 @@ def create_app(
             graph=app.state.supplement_graph,
             settings=settings,
             event_bus=supplement_event_bus,
+            checkout_agent=resolved_checkout_agent,
         )
         app.state.event_bus = event_bus
         app.state.supplement_event_bus = supplement_event_bus
         yield
+        await app.state.supplement_run_manager.embedded_checkout_orchestrator.aclose()
         await engine.dispose()
 
     app = FastAPI(title="Shopper", version="0.1.0", lifespan=lifespan)

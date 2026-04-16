@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import sys
+import types
 from pathlib import Path
 
+from shopper.agents.tools import browser_tools
 from shopper.agents.tools.browser_tools import BrowserCheckoutAgent
 from shopper.agents.tools.browser_tools import BrowserUseCheckoutBackend
 from shopper.config import Settings
@@ -27,7 +30,7 @@ class FakeCheckoutBackend:
     async def apply_coupons(self, request, order, artifact_dir: Path):
         return []
 
-    async def complete_checkout(self, request, order, artifact_dir: Path):
+    async def complete_checkout(self, request, order, artifact_dir: Path, *, task_override=None, status_callback=None):
         return self.confirmation
 
 
@@ -143,7 +146,10 @@ class RetryBackend(BrowserUseCheckoutBackend):
         request,
         *,
         disable_cloud_proxy: bool = False,
+        use_cloud_override=None,
+        cloud_proxy_country_code_override=None,
         preflight_url=None,
+        status_callback=None,
     ):
         self.disable_cloud_proxy_calls.append(disable_cloud_proxy)
         assert preflight_url == request.store.start_url
@@ -172,6 +178,38 @@ def test_browser_use_backend_retries_without_proxy_on_tunnel_failure(tmp_path: P
     assert backend.disable_cloud_proxy_calls == [False, True]
 
 
+def test_browser_use_backend_does_not_pass_cloud_params_when_cloud_disabled(tmp_path: Path, monkeypatch) -> None:
+    captured_kwargs = {}
+
+    class FakeBrowser:
+        def __init__(self, **kwargs) -> None:
+            captured_kwargs.update(kwargs)
+
+    fake_browser_use = types.SimpleNamespace(Browser=FakeBrowser)
+    monkeypatch.setitem(sys.modules, "browser_use", fake_browser_use)
+    monkeypatch.setattr(browser_tools, "_require_browser_use", lambda: None)
+
+    settings = Settings(
+        SHOPPER_APP_ENV="test",
+        SHOPPER_CHECKOUT_ARTIFACTS_DIR=str(tmp_path / "artifacts"),
+        SHOPPER_BROWSER_CHECKOUT_USE_CLOUD=False,
+        SHOPPER_BROWSER_CHECKOUT_CLOUD_PROFILE_ID="profile-123",
+        SHOPPER_BROWSER_CHECKOUT_CLOUD_PROXY_COUNTRY_CODE="us",
+        SHOPPER_BROWSER_CHECKOUT_CLOUD_TIMEOUT_MINUTES=15,
+        BROWSER_USE_API_KEY="test-key",
+        LANGSMITH_TRACING=False,
+    )
+    backend = BrowserUseCheckoutBackend(settings)
+
+    browser = backend._build_browser(_request(), tmp_path / "artifacts", ["demo.example"])
+
+    assert isinstance(browser, FakeBrowser)
+    assert captured_kwargs["use_cloud"] is False
+    assert captured_kwargs["cloud_profile_id"] is None
+    assert captured_kwargs["cloud_proxy_country_code"] is None
+    assert captured_kwargs["cloud_timeout"] is None
+
+
 class FakeHistory:
     def __init__(self, final_result_text: str) -> None:
         self._final_result_text = final_result_text
@@ -193,7 +231,10 @@ class ResultRetryBackend(BrowserUseCheckoutBackend):
         request,
         *,
         disable_cloud_proxy: bool = False,
+        use_cloud_override=None,
+        cloud_proxy_country_code_override=None,
         preflight_url=None,
+        status_callback=None,
     ):
         self.disable_cloud_proxy_calls.append(disable_cloud_proxy)
         assert preflight_url == request.store.start_url
@@ -222,6 +263,142 @@ def test_browser_use_backend_retries_without_proxy_on_tunnel_result(tmp_path: Pa
     assert backend.disable_cloud_proxy_calls == [False, True]
 
 
+class CountryFallbackBackend(BrowserUseCheckoutBackend):
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self.calls: list[tuple[bool, object, object, str]] = []
+
+    async def _run_agent_once(
+        self,
+        task,
+        artifact_dir: Path,
+        output_schema,
+        request,
+        *,
+        disable_cloud_proxy: bool = False,
+        use_cloud_override=None,
+        cloud_proxy_country_code_override=None,
+        preflight_url=None,
+        status_callback=None,
+    ):
+        self.calls.append(
+            (
+                disable_cloud_proxy,
+                use_cloud_override,
+                cloud_proxy_country_code_override,
+                artifact_dir.name,
+            )
+        )
+        assert preflight_url == request.store.start_url
+        if cloud_proxy_country_code_override == "ca":
+            return "country-fallback-ok"
+        raise RuntimeError("Navigation failed: net::ERR_TUNNEL_CONNECTION_FAILED")
+
+
+def test_browser_use_backend_retries_with_fallback_proxy_country(tmp_path: Path) -> None:
+    settings = Settings(
+        SHOPPER_APP_ENV="test",
+        SHOPPER_CHECKOUT_ARTIFACTS_DIR=str(tmp_path / "artifacts"),
+        SHOPPER_BROWSER_CHECKOUT_USE_CLOUD=True,
+        SHOPPER_BROWSER_CHECKOUT_CLOUD_PROXY_COUNTRY_CODE="us",
+        SHOPPER_BROWSER_CHECKOUT_CLOUD_FALLBACK_PROXY_COUNTRY_CODES="ca,uk",
+        BROWSER_USE_API_KEY="test-key",
+        LANGSMITH_TRACING=False,
+    )
+    backend = CountryFallbackBackend(settings)
+
+    events = []
+    result = asyncio.run(
+        backend._run_agent(
+            "task",
+            tmp_path / "artifacts",
+            object,
+            _request(),
+            preflight_url=_request().store.start_url,
+            status_callback=events.append,
+        )
+    )
+
+    assert result == "country-fallback-ok"
+    assert backend.calls == [
+        (False, None, None, "artifacts"),
+        (True, True, None, "proxy-fallback"),
+        (False, True, "ca", "proxy-ca-fallback"),
+    ]
+    assert [event["attempt_label"] for event in events if event["type"] == "browser_attempt"] == [
+        "proxy-fallback",
+        "proxy-ca-fallback",
+    ]
+
+
+class LocalFallbackBackend(BrowserUseCheckoutBackend):
+    def __init__(self, settings: Settings) -> None:
+        super().__init__(settings)
+        self.calls: list[tuple[bool, object, object, str]] = []
+
+    async def _run_agent_once(
+        self,
+        task,
+        artifact_dir: Path,
+        output_schema,
+        request,
+        *,
+        disable_cloud_proxy: bool = False,
+        use_cloud_override=None,
+        cloud_proxy_country_code_override=None,
+        preflight_url=None,
+        status_callback=None,
+    ):
+        self.calls.append(
+            (
+                disable_cloud_proxy,
+                use_cloud_override,
+                cloud_proxy_country_code_override,
+                artifact_dir.name,
+            )
+        )
+        assert preflight_url == request.store.start_url
+        if use_cloud_override is False:
+            return "local-fallback-ok"
+        raise RuntimeError("Navigation failed: net::ERR_TUNNEL_CONNECTION_FAILED")
+
+
+def test_browser_use_backend_falls_back_to_local_browser_after_cloud_attempts(tmp_path: Path) -> None:
+    settings = Settings(
+        SHOPPER_APP_ENV="test",
+        SHOPPER_CHECKOUT_ARTIFACTS_DIR=str(tmp_path / "artifacts"),
+        SHOPPER_BROWSER_CHECKOUT_USE_CLOUD=True,
+        SHOPPER_BROWSER_CHECKOUT_CLOUD_PROXY_COUNTRY_CODE="us",
+        SHOPPER_BROWSER_CHECKOUT_CLOUD_FALLBACK_PROXY_COUNTRY_CODES="ca",
+        SHOPPER_BROWSER_CHECKOUT_ALLOW_LOCAL_FALLBACK=True,
+        BROWSER_USE_API_KEY="test-key",
+        LANGSMITH_TRACING=False,
+    )
+    backend = LocalFallbackBackend(settings)
+
+    events = []
+    request = _request()
+    result = asyncio.run(
+        backend._run_agent(
+            "task",
+            tmp_path / "artifacts",
+            object,
+            request,
+            preflight_url=request.store.start_url,
+            status_callback=events.append,
+        )
+    )
+
+    assert result == "local-fallback-ok"
+    assert backend.calls == [
+        (False, None, None, "artifacts"),
+        (True, True, None, "proxy-fallback"),
+        (False, True, "ca", "proxy-ca-fallback"),
+        (False, False, None, "local-browser-fallback"),
+    ]
+    assert events[-1]["view_mode"] == "local"
+
+
 class SessionLimitRetryBackend(BrowserUseCheckoutBackend):
     def __init__(self, settings: Settings) -> None:
         super().__init__(settings)
@@ -240,7 +417,10 @@ class SessionLimitRetryBackend(BrowserUseCheckoutBackend):
         request,
         *,
         disable_cloud_proxy: bool = False,
+        use_cloud_override=None,
+        cloud_proxy_country_code_override=None,
         preflight_url=None,
+        status_callback=None,
     ):
         self.attempts += 1
         assert disable_cloud_proxy is False

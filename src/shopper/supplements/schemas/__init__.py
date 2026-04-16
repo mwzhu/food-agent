@@ -1,3 +1,25 @@
+from shopper.supplements.schemas.buyer_profile import (
+    ShippingAddress,
+    SupplementBuyerProfileRead,
+    SupplementBuyerProfileSnapshot,
+    SupplementBuyerProfileUpsertRequest,
+)
+from shopper.supplements.schemas.checkout_session import (
+    AgentCheckoutStartRequest,
+    PaymentCredentials,
+    SupplementCheckoutCancelRequest,
+    SupplementCheckoutContinueRequest,
+    SupplementCheckoutPresentationMode,
+    SupplementCheckoutSessionRead,
+    SupplementCheckoutSessionStatus,
+    SupplementCheckoutStartRequest,
+    SupplementOrderConfirmation,
+    SupplementOrderConfirmationLine,
+)
+from shopper.supplements.schemas.embed_spike import (
+    SupplementCheckoutEmbedSpikeRead,
+    SupplementCheckoutEmbedSpikeRequest,
+)
 from shopper.supplements.schemas.health import HealthProfile, Sex, SupplementNeed
 from shopper.supplements.schemas.product import (
     CategoryDiscoveryResult,
@@ -11,8 +33,10 @@ from shopper.supplements.schemas.product import (
 )
 from shopper.supplements.schemas.recommendation import (
     StackItem,
+    StoreCartQuantityUpdate,
     StoreCart,
     StoreCartLine,
+    SupplementCartUpdateRequest,
     SupplementStack,
 )
 from shopper.supplements.schemas.run import (
@@ -40,13 +64,29 @@ __all__ = [
     "IngredientAnalysis",
     "ProductComparison",
     "Sex",
+    "ShippingAddress",
     "ShopifyPriceRange",
     "ShopifyProduct",
     "ShopifyProductVariant",
     "StackItem",
+    "StoreCartQuantityUpdate",
     "StoreCart",
     "StoreCartLine",
+    "SupplementCartUpdateRequest",
     "StoreSearchResult",
+    "SupplementBuyerProfileRead",
+    "SupplementBuyerProfileSnapshot",
+    "SupplementBuyerProfileUpsertRequest",
+    "AgentCheckoutStartRequest",
+    "PaymentCredentials",
+    "SupplementCheckoutEmbedSpikeRead",
+    "SupplementCheckoutEmbedSpikeRequest",
+    "SupplementCheckoutCancelRequest",
+    "SupplementCheckoutContinueRequest",
+    "SupplementCheckoutPresentationMode",
+    "SupplementCheckoutSessionRead",
+    "SupplementCheckoutSessionStatus",
+    "SupplementCheckoutStartRequest",
     "SupplementCriticConcern",
     "SupplementCriticDecision",
     "SupplementCriticFinding",
@@ -63,5 +103,7 @@ __all__ = [
     "SupplementRunRead",
     "SupplementStack",
     "SupplementStateSnapshot",
+    "SupplementOrderConfirmation",
+    "SupplementOrderConfirmationLine",
     "SupplementTraceMetadata",
 ]

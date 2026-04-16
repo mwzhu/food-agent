@@ -1,0 +1,55 @@
+{
+  "verified_at": "2026-04-11T18:34:01.845356-07:00",
+  "results": [
+    {
+      "store_domain": "transparentlabs.com",
+      "query": "creatine hmb",
+      "selected_product_title": "Creatine HMB",
+      "selected_variant_id": "gid://shopify/ProductVariant/39785037103197",
+      "checkout_url": "https://www.transparentlabs.com/cart/c/hWNAv9ty0SEqcTiymLx3Ods8?query=[redacted]",
+      "final_url": "https://www.transparentlabs.com/checkouts/cn/hWNAv9ty0SEqcTiymLx3Ods8/en?query=[redacted]",
+      "status_code": 200,
+      "iframe_allowed": false,
+      "block_reason": "Merchant CSP frame-ancestors does not allow Shopper origins.",
+      "x_frame_options": null,
+      "content_security_policy": "block-all-mixed-content; upgrade-insecure-requests; frame-ancestors 'self' transparent-labs.myshopify.com admin.shopify.com; report-to shopify-csp",
+      "frame_ancestors": [
+        "'self'",
+        "transparent-labs.myshopify.com",
+        "admin.shopify.com"
+      ],
+      "allowed_embed_origins": [
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://localhost:3000",
+        "http://localhost:3001"
+      ],
+      "error": null
+    },
+    {
+      "store_domain": "livemomentous.com",
+      "query": "magnesium l-threonate",
+      "selected_product_title": "Magnesium L-Threonate",
+      "selected_variant_id": "gid://shopify/ProductVariant/41127755251895",
+      "checkout_url": "https://www.livemomentous.com/cart/c/hWNAv9uCnKignCZ2v8y3IYn2?query=[redacted]",
+      "final_url": "https://www.livemomentous.com/checkouts/cn/hWNAv9uCnKignCZ2v8y3IYn2/en?query=[redacted]",
+      "status_code": 200,
+      "iframe_allowed": false,
+      "block_reason": "Merchant CSP frame-ancestors does not allow Shopper origins.",
+      "x_frame_options": null,
+      "content_security_policy": "block-all-mixed-content; upgrade-insecure-requests; frame-ancestors 'self' topical-edge.myshopify.com admin.shopify.com; report-to shopify-csp",
+      "frame_ancestors": [
+        "'self'",
+        "topical-edge.myshopify.com",
+        "admin.shopify.com"
+      ],
+      "allowed_embed_origins": [
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
+        "http://localhost:3000",
+        "http://localhost:3001"
+      ],
+      "error": null
+    }
+  ]
+}

@@ -17,6 +17,16 @@ import type {
   WalmartSmokeRunCreateRequest,
 } from "@/lib/types";
 import type {
+  AgentCheckoutStartRequest,
+  SupplementBuyerProfileRead,
+  SupplementBuyerProfileUpsertRequest,
+  SupplementCartUpdateRequest,
+  SupplementCheckoutCancelRequest,
+  SupplementCheckoutEmbedSpikeRead,
+  SupplementCheckoutEmbedSpikeRequest,
+  SupplementCheckoutContinueRequest,
+  SupplementCheckoutSessionRead,
+  SupplementCheckoutStartRequest,
   SupplementRunApproveRequest,
   SupplementRunCreateRequest,
   SupplementRunRead,
@@ -151,7 +161,99 @@ export function approveSupplementRun(
   runId: string,
   payload: SupplementRunApproveRequest,
 ): Promise<SupplementRunRead> {
-  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/approve`, {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/approve-stores`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function approveSupplementStores(
+  runId: string,
+  payload: SupplementRunApproveRequest,
+): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/approve-stores`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function updateSupplementCartQuantities(
+  runId: string,
+  payload: SupplementCartUpdateRequest,
+): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/cart/quantities`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getSupplementBuyerProfile(runId: string): Promise<SupplementBuyerProfileRead> {
+  return request<SupplementBuyerProfileRead>(`/v1/supplements/runs/${runId}/buyer-profile`);
+}
+
+export function upsertSupplementBuyerProfile(
+  runId: string,
+  payload: SupplementBuyerProfileUpsertRequest,
+): Promise<SupplementBuyerProfileRead> {
+  return request<SupplementBuyerProfileRead>(`/v1/supplements/runs/${runId}/buyer-profile`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function startSupplementCheckout(
+  runId: string,
+  payload: SupplementCheckoutStartRequest,
+): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/checkout/start`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function startAgentCheckout(
+  runId: string,
+  payload: AgentCheckoutStartRequest,
+): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/checkout/agent-start`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function getSupplementCheckoutSession(
+  runId: string,
+  storeDomain: string,
+): Promise<SupplementCheckoutSessionRead> {
+  return request<SupplementCheckoutSessionRead>(`/v1/supplements/runs/${runId}/checkout/${storeDomain}`);
+}
+
+export function continueSupplementCheckout(
+  runId: string,
+  storeDomain: string,
+  payload: SupplementCheckoutContinueRequest,
+): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/checkout/${storeDomain}/continue`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function cancelSupplementCheckout(
+  runId: string,
+  storeDomain: string,
+  payload: SupplementCheckoutCancelRequest,
+): Promise<SupplementRunRead> {
+  return request<SupplementRunRead>(`/v1/supplements/runs/${runId}/checkout/${storeDomain}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function runSupplementCheckoutEmbedSpike(
+  payload: SupplementCheckoutEmbedSpikeRequest,
+): Promise<SupplementCheckoutEmbedSpikeRead> {
+  return request<SupplementCheckoutEmbedSpikeRead>("/v1/supplements/runs/checkout/embed-spike", {
     method: "POST",
     body: JSON.stringify(payload),
   });

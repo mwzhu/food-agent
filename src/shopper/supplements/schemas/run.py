@@ -5,6 +5,8 @@ from typing import Any, Dict, Literal, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from shopper.supplements.schemas.buyer_profile import SupplementBuyerProfileSnapshot
+from shopper.supplements.schemas.checkout_session import SupplementCheckoutSessionRead, SupplementOrderConfirmation
 from shopper.supplements.schemas.health import HealthProfile, SupplementNeed
 from shopper.supplements.schemas.product import CategoryDiscoveryResult, ProductComparison
 from shopper.supplements.schemas.recommendation import StoreCart, SupplementStack
@@ -94,6 +96,14 @@ class SupplementStateSnapshot(BaseModel):
     critic_verdict: Optional[SupplementCriticVerdict] = None
     store_carts: list[StoreCart] = Field(default_factory=list)
     approved_store_domains: list[str] = Field(default_factory=list)
+    buyer_profile: Optional[SupplementBuyerProfileSnapshot] = None
+    buyer_profile_ready: bool = False
+    checkout_sessions: list[SupplementCheckoutSessionRead] = Field(default_factory=list)
+    active_checkout_store: Optional[str] = None
+    continue_url: Optional[str] = None
+    payment_handlers: list[str] = Field(default_factory=list)
+    order_confirmations: list[SupplementOrderConfirmation] = Field(default_factory=list)
+    fallback_reason: Optional[str] = None
     status: SupplementRunLifecycleStatus = "pending"
     current_node: str = "created"
     current_phase: Optional[SupplementPhaseName] = None

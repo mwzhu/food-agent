@@ -21,7 +21,12 @@ import {
   X,
 } from "lucide-react";
 
+import { BuyerProfileDrawer } from "@/components/v1/buyer-profile-drawer";
+import { OrderConfirmationCard } from "@/components/v1/order-confirmation-card";
+import { PaymentCredentialsModal } from "@/components/v1/payment-credentials-modal";
 import { useCurrentUser } from "@/components/layout/providers";
+import { useStartAgentCheckout, useUpdateSupplementCartQuantities } from "@/hooks/use-supplement-checkout";
+import { useSupplementBuyerProfile, useUpsertSupplementBuyerProfile } from "@/hooks/use-supplement-buyer-profile";
 import {
   useApproveSupplementRun,
   useCreateSupplementRun,
@@ -31,10 +36,16 @@ import {
 import { useUser } from "@/hooks/use-user";
 import type {
   HealthProfile,
+  PaymentCredentials,
   ProductComparison,
   ShopifyProduct,
   StackItem,
   StoreCart,
+  StoreCartLine,
+  SupplementBuyerProfileRead,
+  SupplementBuyerProfileUpsertRequest,
+  SupplementCheckoutSessionRead,
+  SupplementOrderConfirmation,
   SupplementRunEvent,
   SupplementRunLifecycleStatus,
   SupplementStateSnapshot,
@@ -96,6 +107,16 @@ type DemoMessage =
       id: string;
       type: "widget";
       widget: CartWidgetModel;
+    }
+  | {
+      id: string;
+      type: "order_confirmation";
+      confirmation: SupplementOrderConfirmation;
+    }
+  | {
+      id: string;
+      type: "agent_browser";
+      session: SupplementCheckoutSessionRead;
     };
 
 type DemoStepStatus = "pending" | "running" | "completed" | "error";
@@ -133,6 +154,10 @@ type ProfileContext = {
 
 type CartWidgetLineItem = {
   key: string;
+  storeDomain: string;
+  lineId: string | null;
+  variantId: string | null;
+  productId: string | null;
   title: string;
   subtitle: string;
   imageUrl: string | null;
@@ -141,17 +166,30 @@ type CartWidgetLineItem = {
   tag?: string;
 };
 
-type CartWidgetModel = {
+type CartWidgetStore = {
   storeDomain: string;
   storeName: string;
-  checkoutUrl: string | null;
+  checkoutSession: SupplementCheckoutSessionRead | null;
+  fallbackUrl: string | null;
   statusLine: string;
   subtotal: number | null;
-  budget: number;
   approved: boolean;
-  buyState: "idle" | "approving" | "opened" | "error";
   items: CartWidgetLineItem[];
 };
+
+type CartWidgetModel = {
+  stores: CartWidgetStore[];
+  subtotal: number | null;
+  budget: number;
+  topLevelState: CheckoutTopLevelState;
+  actionLabel: string;
+};
+
+type CheckoutTopLevelState =
+  | "planning"
+  | "awaiting_approval"
+  | "checkout_in_progress"
+  | "completed_or_needs_attention";
 
 export function V1Workspace() {
   const router = useRouter();
@@ -305,15 +343,24 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
   const [showHistory, setShowHistory] = useState(true);
   const [messages, setMessages] = useState<DemoMessage[]>([]);
   const [activeConversation, setActiveConversation] = useState<ActiveConversation | null>(null);
-  const [buyState, setBuyState] = useState<CartWidgetModel["buyState"]>("idle");
+  const [buyerProfileOpen, setBuyerProfileOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [pendingAgentCheckoutAfterProfile, setPendingAgentCheckoutAfterProfile] = useState(false);
+  const [selectedStoreDomain, setSelectedStoreDomain] = useState<string | null>(null);
 
   const userQuery = useUser(storedUserId);
   const createSupplementRunMutation = useCreateSupplementRun();
   const approveMutation = useApproveSupplementRun();
+  const buyerProfileQuery = useSupplementBuyerProfile(runId ?? "", Boolean(runId));
+  const upsertBuyerProfileMutation = useUpsertSupplementBuyerProfile();
+  const startAgentCheckoutMutation = useStartAgentCheckout();
+  const updateCartQuantitiesMutation = useUpdateSupplementCartQuantities();
   const runQuery = useSupplementRun(runId ?? "", true);
   const stream = useSupplementRunStream(runId ?? "");
   const snapshot = runQuery.data?.state_snapshot ?? null;
   const runStatus = runQuery.data?.status ?? null;
+  const buyerProfile = buyerProfileQuery.data ?? null;
+  const checkoutUiState = useMemo(() => deriveCheckoutUiState(runStatus, snapshot), [runStatus, snapshot]);
 
   const profileContext = useMemo(
     () => buildProfileContext(storedUserId, userQuery.data),
@@ -324,7 +371,19 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
   const timersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const streamedReasoningRef = useRef<Set<string>>(new Set());
   const streamedFailureRef = useRef<Set<string>>(new Set());
-  const buyAcknowledgedRef = useRef<Set<string>>(new Set());
+  const milestoneNarrationRef = useRef<Set<string>>(new Set());
+  const actionPending =
+    approveMutation.isPending ||
+    upsertBuyerProfileMutation.isPending ||
+    startAgentCheckoutMutation.isPending ||
+    updateCartQuantitiesMutation.isPending;
+  const activeCheckoutStore =
+    selectedStoreDomain ??
+    snapshot?.active_checkout_store ??
+    snapshot?.checkout_sessions.find((checkoutSession) => !isCheckoutSessionTerminal(checkoutSession.status))?.store_domain ??
+    null;
+  const activeCheckoutSession =
+    snapshot?.checkout_sessions.find((checkoutSession) => checkoutSession.store_domain === activeCheckoutStore) ?? null;
 
   const progressSteps = useMemo(
     () =>
@@ -343,13 +402,13 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
     () =>
       activeConversation
         ? buildCartWidget({
-            buyState,
+            checkoutUiState,
             intent: activeConversation.intent,
             runStatus,
             snapshot,
           })
         : null,
-    [activeConversation, buyState, runStatus, snapshot],
+    [activeConversation, checkoutUiState, runStatus, snapshot],
   );
 
   useEffect(() => {
@@ -357,6 +416,26 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
       clearAllTimers(timersRef);
     };
   }, []);
+
+  useEffect(() => {
+    if (!snapshot?.checkout_sessions.length) {
+      if (!snapshot?.order_confirmations.length) {
+        setSelectedStoreDomain(null);
+      }
+      return;
+    }
+
+    if (
+      selectedStoreDomain &&
+      snapshot.checkout_sessions.some((checkoutSession) => checkoutSession.store_domain === selectedStoreDomain)
+    ) {
+      return;
+    }
+
+    setSelectedStoreDomain(
+      snapshot.active_checkout_store ?? snapshot.checkout_sessions.find((checkoutSession) => !isCheckoutSessionTerminal(checkoutSession.status))?.store_domain ?? snapshot.checkout_sessions[0]?.store_domain ?? null,
+    );
+  }, [selectedStoreDomain, snapshot]);
 
   useEffect(() => {
     if (!activeConversation) {
@@ -385,6 +464,36 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
       }),
     );
   }, [activeConversation, featuredCart]);
+
+  useEffect(() => {
+    if (!activeConversation || !snapshot) {
+      return;
+    }
+
+    const visibleAgentSessions = snapshot.checkout_sessions.filter(
+      (checkoutSession) =>
+        checkoutSession.presentation_mode === "agent" && checkoutSession.status !== "order_placed",
+    );
+    const visibleMessageIds = new Set(
+      visibleAgentSessions.map((checkoutSession) => `agent-browser:${checkoutSession.session_id}`),
+    );
+
+    setMessages((previousMessages) => {
+      let nextMessages = previousMessages.filter(
+        (message) => message.type !== "agent_browser" || visibleMessageIds.has(message.id),
+      );
+
+      visibleAgentSessions.forEach((checkoutSession) => {
+        nextMessages = upsertMessage(nextMessages, {
+          id: `agent-browser:${checkoutSession.session_id}`,
+          type: "agent_browser",
+          session: checkoutSession,
+        });
+      });
+
+      return nextMessages;
+    });
+  }, [activeConversation, snapshot]);
 
   useEffect(() => {
     if (!activeConversation || !featuredCart || !snapshot?.recommended_stack) {
@@ -441,14 +550,85 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
     streamAssistantText(messageId, failureText, setMessages, timersRef);
   }, [activeConversation, runStatus, snapshot]);
 
+  useEffect(() => {
+    if (!activeConversation || !snapshot) {
+      return;
+    }
+
+    if (runStatus === "awaiting_approval" && snapshot.store_carts.length) {
+      queueNarration({
+        key: `approval:${activeConversation.sessionKey}`,
+        text: `I found ${snapshot.store_carts.length} store${snapshot.store_carts.length === 1 ? "" : "s"} for this stack. Confirm and buy when you’re ready, and I’ll stream the checkout browser directly into this chat.`,
+        timersRef,
+        messages,
+        setMessages,
+        seenRef: milestoneNarrationRef,
+      });
+    }
+
+    if (snapshot.approved_store_domains.length && !snapshot.buyer_profile_ready) {
+      queueNarration({
+        key: `buyer:${activeConversation.sessionKey}`,
+        text: "Before I buy, I need your shipping details.",
+        timersRef,
+        messages,
+        setMessages,
+        seenRef: milestoneNarrationRef,
+      });
+    }
+
+    if (activeCheckoutSession) {
+      const checkoutNarration =
+        activeCheckoutSession.status === "agent_running"
+          ? `Browser agent is checking out at ${formatStoreName(activeCheckoutSession.store_domain)}. Watch the live browser card in this chat.`
+          : activeCheckoutSession.status === "failed"
+            ? `${formatStoreName(activeCheckoutSession.store_domain)} checkout failed: ${activeCheckoutSession.error_message ?? "the store could not be reached from the browser agent."}`
+            : activeCheckoutSession.presentation_mode === "external"
+              ? `${formatStoreName(activeCheckoutSession.store_domain)} needs a controlled continuation step in the checkout panel.`
+              : activeCheckoutSession.status === "order_placed"
+                ? `${formatStoreName(activeCheckoutSession.store_domain)} order confirmation is ready in this chat.`
+                : `${formatStoreName(activeCheckoutSession.store_domain)} checkout is waiting in this chat.`;
+
+      queueNarration({
+        key: `checkout:${activeConversation.sessionKey}:${activeCheckoutSession.store_domain}:${activeCheckoutSession.status}`,
+        text: checkoutNarration,
+        timersRef,
+        messages,
+        setMessages,
+        seenRef: milestoneNarrationRef,
+      });
+    }
+
+    snapshot.order_confirmations.forEach((confirmation) => {
+      setMessages((previousMessages) =>
+        upsertMessage(previousMessages, {
+          id: `confirmation:${confirmation.confirmation_id}`,
+          type: "order_confirmation",
+          confirmation,
+        }),
+      );
+      queueNarration({
+        key: `order:${activeConversation.sessionKey}:${confirmation.confirmation_id}`,
+        text: `${formatStoreName(confirmation.store_domain)} order placed.`,
+        timersRef,
+        messages,
+        setMessages,
+        seenRef: milestoneNarrationRef,
+      });
+    });
+  }, [activeCheckoutSession, activeConversation, messages, runStatus, snapshot]);
+
   const resetWorkspace = () => {
     clearAllTimers(timersRef);
     streamedReasoningRef.current.clear();
     streamedFailureRef.current.clear();
-    buyAcknowledgedRef.current.clear();
+    milestoneNarrationRef.current.clear();
     setRunId(null);
     setErrorMessage(null);
-    setBuyState("idle");
+    setBuyerProfileOpen(false);
+    setPaymentModalOpen(false);
+    setPendingAgentCheckoutAfterProfile(false);
+    setSelectedStoreDomain(null);
     setActiveConversation(null);
     setMessages([]);
   };
@@ -457,10 +637,13 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
     clearAllTimers(timersRef);
     streamedReasoningRef.current.clear();
     streamedFailureRef.current.clear();
-    buyAcknowledgedRef.current.clear();
+    milestoneNarrationRef.current.clear();
     setRunId(null);
     setErrorMessage(null);
-    setBuyState("idle");
+    setBuyerProfileOpen(false);
+    setPaymentModalOpen(false);
+    setPendingAgentCheckoutAfterProfile(false);
+    setSelectedStoreDomain(null);
 
     const intent = parsePromptIntent(prompt, profileContext);
     const healthProfile = buildHealthProfile(intent, profileContext);
@@ -524,71 +707,135 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
     await startConversation(text);
   };
 
-  const handleBuy = async () => {
-    if (!featuredCart?.checkoutUrl) {
+  const handleAgentCheckout = async () => {
+    if (!runId || !snapshot) {
       return;
     }
 
-    if (buyState === "opened") {
-      window.open(featuredCart.checkoutUrl, "_blank", "noopener,noreferrer");
+    const checkoutReadyStoreDomains = collectCheckoutReadyStoreDomains(snapshot);
+    if (!checkoutReadyStoreDomains.length) {
       return;
     }
 
-    const previewWindow = window.open("", "_blank", "noopener,noreferrer");
-    setBuyState("approving");
+    if (
+      snapshot.order_confirmations.length ||
+      snapshot.checkout_sessions.some((checkoutSession) => checkoutSession.status === "agent_running")
+    ) {
+      setSelectedStoreDomain(activeCheckoutStore ?? checkoutReadyStoreDomains[0] ?? null);
+      return;
+    }
+
     setErrorMessage(null);
 
     try {
-      let checkoutUrl = featuredCart.checkoutUrl;
+      let workingRun = runQuery.data;
+      const approvedAllStores =
+        snapshot.approved_store_domains.length === checkoutReadyStoreDomains.length &&
+        checkoutReadyStoreDomains.every((storeDomain) => snapshot.approved_store_domains.includes(storeDomain));
 
-      if (runId && runStatus === "awaiting_approval") {
-        const approvedRun = await approveMutation.mutateAsync({
+      if (runStatus === "awaiting_approval" || !approvedAllStores) {
+        workingRun = await approveMutation.mutateAsync({
           runId,
           payload: {
-            approved_store_domains: [featuredCart.storeDomain],
+            approved_store_domains: checkoutReadyStoreDomains,
           },
         });
-        const approvedWidget = buildCartWidget({
-          buyState: "opened",
-          intent: activeConversation?.intent ?? parsePromptIntent("", profileContext),
-          runStatus: approvedRun.status,
-          snapshot: approvedRun.state_snapshot,
-        });
-        checkoutUrl = approvedWidget?.checkoutUrl ?? checkoutUrl;
       }
 
-      if (!checkoutUrl) {
-        throw new Error("Checkout URL is not available for this cart yet.");
+      const approvedStoreDomains =
+        workingRun?.state_snapshot.approved_store_domains.length
+          ? workingRun.state_snapshot.approved_store_domains
+          : checkoutReadyStoreDomains;
+      setSelectedStoreDomain(approvedStoreDomains[0] ?? checkoutReadyStoreDomains[0] ?? null);
+
+      if (!isBuyerProfileReady(buyerProfile)) {
+        setPendingAgentCheckoutAfterProfile(true);
+        setBuyerProfileOpen(true);
+        return;
       }
 
-      if (previewWindow) {
-        previewWindow.location.href = checkoutUrl;
-      } else {
-        window.open(checkoutUrl, "_blank", "noopener,noreferrer");
-      }
+      setPaymentModalOpen(true);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not prepare agent checkout.");
+    }
+  };
 
-      setBuyState("opened");
+  const handleCartQuantityChange = async (item: CartWidgetLineItem, quantity: number) => {
+    if (!runId || quantity < 1) {
+      return;
+    }
 
-      if (activeConversation && !buyAcknowledgedRef.current.has(activeConversation.sessionKey)) {
-        buyAcknowledgedRef.current.add(activeConversation.sessionKey);
-        const confirmationId = `buy:${activeConversation.sessionKey}`;
-        const confirmationText =
-          "I opened the checkout in a new tab. The cart is already filled, and you can adjust quantities or complete payment there.";
+    try {
+      setErrorMessage(null);
+      await updateCartQuantitiesMutation.mutateAsync({
+        runId,
+        payload: {
+          updates: [
+            {
+              store_domain: item.storeDomain,
+              line_id: item.lineId,
+              variant_id: item.variantId,
+              product_id: item.productId,
+              quantity,
+            },
+          ],
+        },
+      });
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not update cart quantity.");
+    }
+  };
 
-        setMessages((previousMessages) =>
-          upsertMessage(previousMessages, {
-            id: confirmationId,
-            type: "assistant",
-            text: "",
-            streaming: true,
-          }),
-        );
-        streamAssistantText(confirmationId, confirmationText, setMessages, timersRef);
+  const handleBuyerProfileSubmit = async (payload: SupplementBuyerProfileUpsertRequest) => {
+    if (!runId) {
+      return;
+    }
+
+    try {
+      await upsertBuyerProfileMutation.mutateAsync({ runId, payload });
+      setBuyerProfileOpen(false);
+      if (pendingAgentCheckoutAfterProfile) {
+        setPendingAgentCheckoutAfterProfile(false);
+        setPaymentModalOpen(true);
       }
     } catch (error) {
-      previewWindow?.close();
-      setBuyState("error");
-      setErrorMessage(error instanceof Error ? error.message : "Could not open checkout.");
+      setErrorMessage(error instanceof Error ? error.message : "Could not save buyer setup.");
+    }
+  };
+
+  const handlePaymentSubmit = async ({
+    payment_credentials,
+    simulate_success,
+  }: {
+    payment_credentials: PaymentCredentials;
+    simulate_success: boolean;
+  }) => {
+    if (!runId || !snapshot) {
+      return;
+    }
+
+    try {
+      setPaymentModalOpen(false);
+      const approvedStoreDomains = snapshot.approved_store_domains.length
+        ? snapshot.approved_store_domains
+        : collectCheckoutReadyStoreDomains(snapshot);
+      const startedRun = await startAgentCheckoutMutation.mutateAsync({
+        runId,
+        payload: {
+          store_domains: approvedStoreDomains,
+          payment_credentials,
+          simulate_success,
+        },
+      });
+      setSelectedStoreDomain(
+        startedRun.state_snapshot.active_checkout_store ??
+          startedRun.state_snapshot.checkout_sessions[0]?.store_domain ??
+          approvedStoreDomains[0] ??
+          null,
+      );
+      setPendingAgentCheckoutAfterProfile(false);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : "Could not start agent checkout.");
     }
   };
 
@@ -601,41 +848,70 @@ function SupplementAgentWorkspace({ storedUserId }: { storedUserId: string | nul
         onToggle={() => setShowHistory((current) => !current)}
       />
 
-      <div className="flex min-w-0 flex-1 flex-col bg-white">
-        {isEmptyConversation ? (
-          <NewConversationState
-            disabled={
-              createSupplementRunMutation.isPending ||
-              runStatus === "running" ||
-              runStatus === "awaiting_approval" ||
-              approveMutation.isPending
-            }
-            onSend={handleSend}
-            suggestions={NEW_CONVERSATION_USE_CASES}
-          />
-        ) : (
-          <ChatThread buyState={buyState} messages={messages} onBuy={handleBuy} />
-        )}
+      <div className="flex min-w-0 flex-1 bg-white">
+        <div className="flex min-w-0 flex-1 flex-col bg-white">
+          {isEmptyConversation ? (
+            <NewConversationState
+              disabled={
+                createSupplementRunMutation.isPending ||
+                runStatus === "running" ||
+                runStatus === "awaiting_approval" ||
+                actionPending
+              }
+              onSend={handleSend}
+              suggestions={NEW_CONVERSATION_USE_CASES}
+            />
+          ) : (
+            <ChatThread
+              actionPending={actionPending}
+              checkoutUiState={checkoutUiState}
+              messages={messages}
+              onCheckout={handleAgentCheckout}
+              onQuantityChange={handleCartQuantityChange}
+            />
+          )}
 
-        {errorMessage ? (
-          <div className="border-t border-[#EAEAEA] bg-[#FCF1F1] px-6 py-3 text-sm text-[#B32F2F]">
-            {errorMessage}
-          </div>
-        ) : null}
+          {errorMessage ? (
+            <div className="border-t border-[#EAEAEA] bg-[#FCF1F1] px-6 py-3 text-sm text-[#B32F2F]">
+              {errorMessage}
+            </div>
+          ) : null}
 
-        {isEmptyConversation ? null : (
-          <ChatInput
-            disabled={
-              createSupplementRunMutation.isPending ||
-              runStatus === "running" ||
-              runStatus === "awaiting_approval" ||
-              approveMutation.isPending
-            }
-            onSend={handleSend}
-            placeholder={inputPlaceholder(runStatus)}
-          />
-        )}
+          {isEmptyConversation ? null : (
+            <ChatInput
+              disabled={
+                createSupplementRunMutation.isPending ||
+                runStatus === "running" ||
+                runStatus === "awaiting_approval" ||
+                actionPending
+              }
+              onSend={handleSend}
+              placeholder={inputPlaceholder(runStatus, checkoutUiState)}
+            />
+          )}
+        </div>
+
       </div>
+
+      <BuyerProfileDrawer
+        defaultBudget={profileContext.defaultBudget}
+        errorMessage={errorMessage}
+        initialValue={buyerProfile}
+        onClose={() => setBuyerProfileOpen(false)}
+        onSubmit={handleBuyerProfileSubmit}
+        open={buyerProfileOpen}
+        saving={upsertBuyerProfileMutation.isPending}
+      />
+      <PaymentCredentialsModal
+        errorMessage={errorMessage}
+        onClose={() => {
+          setPendingAgentCheckoutAfterProfile(false);
+          setPaymentModalOpen(false);
+        }}
+        onSubmit={handlePaymentSubmit}
+        open={paymentModalOpen}
+        saving={startAgentCheckoutMutation.isPending}
+      />
     </div>
   );
 }
@@ -781,13 +1057,17 @@ function NewConversationState({
 }
 
 function ChatThread({
-  buyState,
+  actionPending,
+  checkoutUiState,
   messages,
-  onBuy,
+  onCheckout,
+  onQuantityChange,
 }: {
-  buyState: CartWidgetModel["buyState"];
+  actionPending: boolean;
+  checkoutUiState: CheckoutTopLevelState;
   messages: DemoMessage[];
-  onBuy: () => Promise<void>;
+  onCheckout: () => Promise<void>;
+  onQuantityChange: (item: CartWidgetLineItem, quantity: number) => Promise<void>;
 }) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -818,12 +1098,44 @@ function ChatThread({
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
   }, [messages]);
 
+  const agentBrowserSessions = messages.flatMap((message) =>
+    message.type === "agent_browser" ? [message.session] : [],
+  );
+  const firstAgentBrowserMessageId = messages.find((message) => message.type === "agent_browser")?.id ?? null;
+  const renderedMessages: ReactNode[] = [];
+  for (let index = 0; index < messages.length; index += 1) {
+    const message = messages[index];
+
+    if (message.type === "agent_browser") {
+      if (message.id !== firstAgentBrowserMessageId) {
+        continue;
+      }
+
+      renderedMessages.push(
+        <AgentBrowserGrid
+          key={`agent-browser-grid:${agentBrowserSessions.map((session) => session.session_id).join(":")}`}
+          sessions={agentBrowserSessions}
+        />,
+      );
+      continue;
+    }
+
+    renderedMessages.push(
+      <MessageRow
+        key={message.id}
+        actionPending={actionPending}
+        checkoutUiState={checkoutUiState}
+        message={message}
+        onCheckout={onCheckout}
+        onQuantityChange={onQuantityChange}
+      />,
+    );
+  }
+
   return (
     <div ref={containerRef} className="v1-scrollbar flex-1 overflow-y-auto px-6 pb-28 pt-6">
       <div className="mx-auto max-w-5xl space-y-6">
-        {messages.map((message) => (
-          <MessageRow key={message.id} buyState={buyState} message={message} onBuy={onBuy} />
-        ))}
+        {renderedMessages}
         <div ref={bottomRef} />
       </div>
     </div>
@@ -831,13 +1143,17 @@ function ChatThread({
 }
 
 function MessageRow({
-  buyState,
+  actionPending,
+  checkoutUiState,
   message,
-  onBuy,
+  onCheckout,
+  onQuantityChange,
 }: {
-  buyState: CartWidgetModel["buyState"];
+  actionPending: boolean;
+  checkoutUiState: CheckoutTopLevelState;
   message: DemoMessage;
-  onBuy: () => Promise<void>;
+  onCheckout: () => Promise<void>;
+  onQuantityChange: (item: CartWidgetLineItem, quantity: number) => Promise<void>;
 }) {
   if (message.type === "user") {
     return (
@@ -854,7 +1170,23 @@ function MessageRow({
   }
 
   if (message.type === "widget") {
-    return <CartWidget buyState={buyState} onBuy={onBuy} widget={message.widget} />;
+    return (
+      <CartWidget
+        actionPending={actionPending}
+        checkoutUiState={checkoutUiState}
+        onCheckout={onCheckout}
+        onQuantityChange={onQuantityChange}
+        widget={message.widget}
+      />
+    );
+  }
+
+  if (message.type === "order_confirmation") {
+    return <OrderConfirmationCard confirmation={message.confirmation} />;
+  }
+
+  if (message.type === "agent_browser") {
+    return <AgentBrowserLiveCard session={message.session} />;
   }
 
   return <AssistantTextMessage streaming={message.streaming} text={message.text} />;
@@ -873,6 +1205,89 @@ function AssistantTextMessage({
         {text}
         {streaming ? <span className="ml-0.5 inline-block h-6 w-0.5 animate-pulse bg-black/70 align-[-2px]" /> : null}
       </p>
+    </div>
+  );
+}
+
+function AgentBrowserGrid({ sessions }: { sessions: SupplementCheckoutSessionRead[] }) {
+  return (
+    <div className="grid w-full grid-cols-1 gap-3 md:grid-cols-2">
+      {sessions.map((session) => (
+        <AgentBrowserLiveCard key={session.session_id} session={session} />
+      ))}
+    </div>
+  );
+}
+
+function AgentBrowserLiveCard({ session }: { session: SupplementCheckoutSessionRead }) {
+  const liveUrl = payloadString(session.embedded_state_payload, "agent_live_url");
+  const viewMode = payloadString(session.embedded_state_payload, "agent_view_mode") ?? "local";
+  const statusText =
+    payloadString(session.embedded_state_payload, "agent_status_text") ??
+    (session.status === "agent_running" ? "Browser agent is working through checkout." : "Checkout needs attention.");
+  const isRunning = session.status === "agent_running";
+  const isCloud = viewMode === "cloud";
+
+  return (
+    <div className="min-w-0 overflow-hidden rounded-[1.35rem] border border-black/10 bg-[#0F1714] text-white shadow-[0_16px_38px_rgba(0,0,0,0.16)]">
+      <div className="flex items-start justify-between gap-3 border-b border-white/10 px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <p className="truncate text-[13px] font-semibold">Live checkout at {formatStoreName(session.store_domain)}</p>
+            <span className="shrink-0 rounded-full border border-emerald-300/20 bg-emerald-300/10 px-2 py-0.5 text-[9px] font-semibold uppercase tracking-[0.12em] text-emerald-100">
+              {isCloud ? "Cloud browser" : "Local browser"}
+            </span>
+          </div>
+          <p className="mt-1 line-clamp-2 text-xs leading-5 text-white/60">{statusText}</p>
+        </div>
+
+        {liveUrl ? (
+          <a
+            className="inline-flex shrink-0 items-center gap-1.5 rounded-full border border-white/12 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-white/82 transition-colors hover:bg-white/12 hover:text-white"
+            href={liveUrl}
+            rel="noreferrer"
+            target="_blank"
+          >
+            Open <ArrowUpRight className="size-3" strokeWidth={2} />
+          </a>
+        ) : null}
+      </div>
+
+      {liveUrl && isRunning ? (
+        <div className="relative aspect-[16/9] min-h-[210px] bg-black">
+          <iframe
+            allow="autoplay; clipboard-read; clipboard-write; fullscreen"
+            className="h-full w-full border-0"
+            src={liveUrl}
+            style={{ pointerEvents: "none" }}
+            title={`Live checkout for ${session.store_domain}`}
+          />
+          <div className="pointer-events-none absolute left-3 top-3 rounded-full border border-white/12 bg-black/45 px-2.5 py-1 text-[11px] font-medium text-white/78 backdrop-blur">
+            Watch-only
+          </div>
+        </div>
+      ) : (
+        <div className="grid min-h-[170px] place-items-center bg-[radial-gradient(circle_at_top_left,rgba(74,222,128,0.18),transparent_36%),linear-gradient(135deg,#101915,#17211d)] px-5 py-7 text-center">
+          <div className="max-w-sm">
+            {isRunning ? <Loader2 className="mx-auto size-5 animate-spin text-emerald-200" strokeWidth={2} /> : null}
+            <p className="mt-3 text-sm font-semibold">
+              {isRunning
+                ? isCloud
+                  ? "Waiting for Browser Use to attach the live stream..."
+                  : "The agent is running in a local browser window."
+                : session.status === "failed"
+                  ? "Checkout stopped before completion."
+                  : "Checkout session finished."}
+            </p>
+            <p className="mt-1.5 text-xs leading-5 text-white/58">
+              {session.error_message ??
+                (isCloud
+                  ? "The iframe appears as soon as Browser Use Cloud returns the viewer URL."
+                  : "Turn on cloud checkout mode to embed the browser stream directly in chat.")}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -929,24 +1344,21 @@ function ProgressIcon({ status }: { status: DemoStepStatus }) {
 }
 
 function CartWidget({
-  buyState,
-  onBuy,
+  actionPending,
+  checkoutUiState,
+  onCheckout,
+  onQuantityChange,
   widget,
 }: {
-  buyState: CartWidgetModel["buyState"];
-  onBuy: () => Promise<void>;
+  actionPending: boolean;
+  checkoutUiState: CheckoutTopLevelState;
+  onCheckout: () => Promise<void>;
+  onQuantityChange: (item: CartWidgetLineItem, quantity: number) => Promise<void>;
   widget: CartWidgetModel;
 }) {
   const budgetDelta =
     widget.subtotal !== null ? Math.round((widget.budget - widget.subtotal) * 100) / 100 : null;
-  const buyLabel =
-    buyState === "approving"
-      ? "Opening checkout..."
-      : buyState === "opened"
-        ? "Checkout opened"
-        : buyState === "error"
-          ? "Try buy again"
-          : "Buy";
+  const canEditQuantities = checkoutUiState === "awaiting_approval" && !actionPending;
 
   return (
     <div className="space-y-4">
@@ -960,73 +1372,125 @@ function CartWidget({
       <div className="overflow-hidden rounded-[2rem] border border-black/10 bg-[#242424] text-white shadow-[0_24px_60px_rgba(0,0,0,0.18)]">
         <div className="flex items-start justify-between gap-4 border-b border-white/10 px-6 py-5">
           <div className="flex items-start gap-4">
-            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-[#1f6feb] text-center text-sm font-semibold text-white">
-              {widget.storeName.slice(0, 2).toUpperCase()}
+            <div className="grid h-16 w-16 place-items-center rounded-2xl bg-[#30E17A] text-center text-sm font-bold text-[#092313]">
+              {widget.stores.length}
             </div>
             <div>
-              <h3 className="text-[1.375rem] font-semibold leading-none tracking-tight">{widget.storeName}</h3>
-              <p className="mt-2 text-[13px] text-white/60">{widget.statusLine}</p>
+              <h3 className="text-[1.375rem] font-semibold leading-none tracking-tight">
+                {widget.stores.length === 1 ? "1 store checkout" : `${widget.stores.length} store checkout`}
+              </h3>
+              <p className="mt-2 text-[13px] text-white/60">
+                {widget.stores.length === 1
+                  ? widget.stores[0].statusLine
+                  : "Review every store and quantity before the browser agent starts."}
+              </p>
             </div>
           </div>
-          {widget.checkoutUrl ? (
-            <button
-              className="rounded-full p-2 text-white/70 transition-colors hover:bg-white/8 hover:text-white"
-              onClick={() => {
-                if (!widget.checkoutUrl) {
-                  return;
-                }
-                window.open(widget.checkoutUrl, "_blank", "noopener,noreferrer");
-              }}
-              title="Open checkout"
-              type="button"
-            >
-              <ArrowUpRight className="size-5" strokeWidth={2} />
-            </button>
-          ) : null}
         </div>
 
-        <div className="divide-y divide-white/10">
-          {widget.items.map((item) => (
-            <div key={item.key} className="flex items-center gap-4 px-6 py-4">
-              <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white">
-                {item.imageUrl ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img alt={item.title} className="h-full w-full object-cover" src={item.imageUrl} />
-                ) : (
-                  <div className="grid h-full w-full place-items-center bg-[#F3F3F3] text-xs font-semibold text-black">
-                    {item.title.slice(0, 2).toUpperCase()}
+        <div className="space-y-4 px-4 py-4">
+          {widget.stores.map((store) => (
+            <div key={store.storeDomain} className="overflow-hidden rounded-[1.45rem] border border-white/10 bg-white/[0.045]">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 px-4 py-3">
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="font-semibold">{store.storeName}</p>
+                    {store.approved ? (
+                      <span className="rounded-full bg-[#30E17A]/14 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#9DF7BC]">
+                        Approved
+                      </span>
+                    ) : null}
                   </div>
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="truncate text-[16px] font-medium">{item.title}</p>
-                  {item.tag ? (
-                    <span className="rounded-full bg-white/12 px-2.5 py-1 text-xs font-medium text-white/78">
-                      {item.tag}
-                    </span>
+                  <p className="mt-1 text-xs text-white/50">{store.statusLine}</p>
+                </div>
+                <div className="flex items-center gap-3">
+                  <p className="text-sm font-semibold text-white/86">
+                    {store.subtotal !== null ? formatMoney(store.subtotal) : "Pending"}
+                  </p>
+                  {store.fallbackUrl ? (
+                    <button
+                      className="rounded-full p-2 text-white/62 transition-colors hover:bg-white/8 hover:text-white"
+                      onClick={() => {
+                        if (!store.fallbackUrl) {
+                          return;
+                        }
+                        window.open(store.fallbackUrl, "_blank", "noopener,noreferrer");
+                      }}
+                      title={`Open ${store.storeName} checkout`}
+                      type="button"
+                    >
+                      <ArrowUpRight className="size-4" strokeWidth={2} />
+                    </button>
                   ) : null}
                 </div>
-                <p className="mt-1 text-[13px] text-white/58">{item.subtitle}</p>
               </div>
 
-              <div className="flex shrink-0 items-center gap-3">
-                <div className="rounded-full border border-white/12 px-3 py-1.5 text-[13px] text-white/76">
-                  Qty {item.quantity}
-                </div>
-                <div className="text-right">
-                  <p className="text-[15px] font-medium">{item.amountLabel}</p>
-                </div>
+              <div className="divide-y divide-white/8">
+                {store.items.map((item) => (
+                  <div key={item.key} className="flex items-center gap-4 px-4 py-3">
+                    <div className="grid h-14 w-14 shrink-0 place-items-center overflow-hidden rounded-2xl bg-white">
+                      {item.imageUrl ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img alt={item.title} className="h-full w-full object-cover" src={item.imageUrl} />
+                      ) : (
+                        <div className="grid h-full w-full place-items-center bg-[#F3F3F3] text-xs font-semibold text-black">
+                          {item.title.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="truncate text-[15px] font-medium">{item.title}</p>
+                        {item.tag ? (
+                          <span className="rounded-full bg-white/12 px-2.5 py-1 text-xs font-medium text-white/78">
+                            {item.tag}
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-[13px] text-white/58">{item.subtitle}</p>
+                    </div>
+
+                    <div className="flex shrink-0 items-center gap-3">
+                      <div className="flex items-center rounded-full border border-white/14 bg-black/18 p-1">
+                        <button
+                          className="grid h-7 w-7 place-items-center rounded-full text-white/72 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                          disabled={!canEditQuantities || item.quantity <= 1}
+                          onClick={() => void onQuantityChange(item, item.quantity - 1)}
+                          type="button"
+                        >
+                          -
+                        </button>
+                        <span className="min-w-8 px-2 text-center text-sm font-semibold text-white">
+                          {item.quantity}
+                        </span>
+                        <button
+                          className="grid h-7 w-7 place-items-center rounded-full text-white/72 transition-colors hover:bg-white/10 hover:text-white disabled:cursor-not-allowed disabled:opacity-35"
+                          disabled={!canEditQuantities}
+                          onClick={() => void onQuantityChange(item, item.quantity + 1)}
+                          type="button"
+                        >
+                          +
+                        </button>
+                      </div>
+                      <div className="w-20 text-right">
+                        <p className="text-[15px] font-medium">{item.amountLabel}</p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {!store.items.length ? (
+                  <div className="px-4 py-5 text-sm text-white/52">No purchasable items were found for this store.</div>
+                ) : null}
               </div>
             </div>
           ))}
         </div>
 
-        <div className="space-y-5 px-6 py-5">
+        <div className="space-y-5 border-t border-white/10 px-6 py-5">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <p className="text-[13px] text-white/55">Ready for one-click handoff</p>
+              <p className="text-[13px] text-white/55">{descriptionForCheckoutState(checkoutUiState)}</p>
               <p className="mt-1 text-[13px] text-white/55">
                 {budgetDelta === null
                   ? "Pricing will be finalized at checkout."
@@ -1034,9 +1498,14 @@ function CartWidget({
                     ? `${formatMoney(budgetDelta)} left in your budget`
                     : `${formatMoney(Math.abs(budgetDelta))} over budget`}
               </p>
+              {canEditQuantities ? (
+                <p className="mt-1 text-[13px] text-[#9DF7BC]">
+                  Use + and - to adjust quantities before buying.
+                </p>
+              ) : null}
             </div>
             <div className="text-right">
-              <p className="text-[13px] text-white/55">Items subtotal</p>
+              <p className="text-[13px] text-white/55">Planned subtotal</p>
               <p className="mt-1 text-[1.75rem] font-semibold leading-none">
                 {widget.subtotal !== null ? formatMoney(widget.subtotal) : "Pending"}
               </p>
@@ -1044,13 +1513,13 @@ function CartWidget({
           </div>
 
           <button
-            className="flex h-14 w-full items-center justify-center gap-3 rounded-full bg-[#2d2d35] text-base font-semibold text-white transition-colors hover:bg-[#35353e] disabled:cursor-not-allowed disabled:opacity-70"
-            disabled={!widget.checkoutUrl || buyState === "approving"}
-            onClick={() => void onBuy()}
+            className="flex h-14 w-full items-center justify-center gap-3 rounded-full bg-[#30E17A] text-base font-bold text-[#092313] shadow-[0_16px_38px_rgba(48,225,122,0.30)] transition-all hover:-translate-y-0.5 hover:bg-[#50F08F] disabled:translate-y-0 disabled:cursor-not-allowed disabled:bg-white/18 disabled:text-white/42 disabled:shadow-none"
+            disabled={checkoutUiState === "planning" || actionPending}
+            onClick={() => void onCheckout()}
             type="button"
           >
-            {buyState === "approving" ? <Loader2 className="size-5 animate-spin" strokeWidth={2} /> : null}
-            {buyLabel}
+            {actionPending ? <Loader2 className="size-5 animate-spin" strokeWidth={2} /> : null}
+            {actionPending ? "Updating checkout..." : widget.actionLabel}
           </button>
         </div>
       </div>
@@ -1397,12 +1866,12 @@ function deriveCheckoutStep(
 }
 
 function buildCartWidget({
-  buyState,
+  checkoutUiState,
   intent,
   runStatus,
   snapshot,
 }: {
-  buyState: CartWidgetModel["buyState"];
+  checkoutUiState: CheckoutTopLevelState;
   intent: DemoIntent;
   runStatus: SupplementRunLifecycleStatus | null;
   snapshot: SupplementStateSnapshot | null;
@@ -1411,58 +1880,103 @@ function buildCartWidget({
     return null;
   }
 
-  const featuredCart = selectFeaturedCart(snapshot.store_carts, snapshot.approved_store_domains);
-  if (!featuredCart) {
+  const readyCarts = snapshot.store_carts.filter((cart) => Boolean(cart.checkout_url));
+  if (!readyCarts.length) {
     return null;
   }
-
   const productIndex = createProductIndex(snapshot);
   const fallbackItems = snapshot.recommended_stack?.items ?? [];
-  const lineItems = featuredCart.lines.length
-    ? featuredCart.lines.map((line, index) => {
-        const matchedProduct =
-          productIndex.get(productIndexKey(featuredCart.store_domain, line.product_id)) ??
-          fallbackItems.find((item) => normalizeProductTitle(item.product.title) === normalizeProductTitle(line.product_title)) ??
-          null;
-
-        return {
-          key: `${featuredCart.store_domain}:${line.line_id || line.variant_id || index}`,
-          title: line.product_title,
-          subtitle: matchedProduct
-            ? `${matchedProduct.goal} • ${line.variant_title || "selected option"}`
-            : line.variant_title || "selected option",
-          imageUrl: productImageUrl(matchedProduct?.product),
-          quantity: line.quantity,
-          amountLabel: formatMoney(line.total_amount ?? line.subtotal_amount ?? 0, line.currency || "USD"),
-          tag: matchedProduct ? formatGoalTag(matchedProduct.goal) : undefined,
-        };
-      })
-    : fallbackItems.slice(0, 4).map((item, index) => ({
-        key: `${item.product.store_domain}:${item.product.product_id}:${index}`,
-        title: item.product.title,
-        subtitle: item.rationale || item.goal,
-        imageUrl: productImageUrl(item.product),
-        quantity: item.quantity,
-        amountLabel:
-          item.monthly_cost !== null
-            ? formatMoney(item.monthly_cost, item.product.price_range.currency || "USD")
-            : "Pending",
-        tag: formatGoalTag(item.goal),
-      }));
+  const stores = readyCarts.map((cart) => {
+    const checkoutSession =
+      snapshot.checkout_sessions.find((session) => session.store_domain === cart.store_domain) ?? null;
+    return {
+      storeDomain: cart.store_domain,
+      storeName: formatStoreName(cart.store_domain),
+      checkoutSession,
+      fallbackUrl: checkoutSession?.fallback_url ?? cart.checkout_url,
+      subtotal: cart.total_amount ?? cart.subtotal_amount,
+      approved: snapshot.approved_store_domains.includes(cart.store_domain),
+      statusLine: statusLineForWidget(runStatus, snapshot, checkoutSession),
+      items: cart.lines.length
+        ? cart.lines.map((line, index) =>
+            buildCartWidgetLineItem({
+              cart,
+              fallbackItems,
+              index,
+              line,
+              productIndex,
+            }),
+          )
+        : fallbackItems
+            .filter((item) => item.product.store_domain === cart.store_domain)
+            .map((item, index) => buildFallbackCartWidgetLineItem(item, index)),
+    };
+  });
+  const subtotal = sumNullable(stores.map((store) => store.subtotal));
 
   return {
-    storeDomain: featuredCart.store_domain,
-    storeName: formatStoreName(featuredCart.store_domain),
-    checkoutUrl: featuredCart.checkout_url,
-    subtotal: featuredCart.total_amount ?? featuredCart.subtotal_amount,
+    stores,
+    subtotal,
     budget: intent.budget,
-    approved: snapshot.approved_store_domains.includes(featuredCart.store_domain),
-    buyState,
-    statusLine:
-      runStatus === "completed"
-        ? "Approved and ready for checkout"
-        : "Checkout-ready cart built from the selected supplement plan",
-    items: lineItems,
+    topLevelState: checkoutUiState,
+    actionLabel: actionLabelForWidget(checkoutUiState, snapshot),
+  };
+}
+
+function buildCartWidgetLineItem({
+  cart,
+  fallbackItems,
+  index,
+  line,
+  productIndex,
+}: {
+  cart: StoreCart;
+  fallbackItems: StackItem[];
+  index: number;
+  line: StoreCartLine;
+  productIndex: Map<string, StackItem>;
+}): CartWidgetLineItem {
+  const matchedProduct =
+    productIndex.get(productIndexKey(cart.store_domain, line.product_id)) ??
+    fallbackItems.find((item) => normalizeProductTitle(item.product.title) === normalizeProductTitle(line.product_title)) ??
+    null;
+
+  return {
+    key: `${cart.store_domain}:${line.line_id || line.variant_id || index}`,
+    storeDomain: cart.store_domain,
+    lineId: line.line_id || null,
+    variantId: line.variant_id || null,
+    productId: line.product_id || null,
+    title: line.product_title,
+    subtitle: matchedProduct
+      ? `${matchedProduct.goal} • ${line.variant_title || "selected option"}`
+      : line.variant_title || "selected option",
+    imageUrl: productImageUrl(matchedProduct?.product),
+    quantity: line.quantity,
+    amountLabel:
+      line.total_amount !== null || line.subtotal_amount !== null
+        ? formatMoney(line.total_amount ?? line.subtotal_amount ?? 0, line.currency || "USD")
+        : "Pending",
+    tag: matchedProduct ? formatGoalTag(matchedProduct.goal) : undefined,
+  };
+}
+
+function buildFallbackCartWidgetLineItem(item: StackItem, index: number): CartWidgetLineItem {
+  return {
+    key: `${item.product.store_domain}:${item.product.product_id}:${index}`,
+    storeDomain: item.product.store_domain,
+    lineId: null,
+    variantId: item.product.variants[0]?.variant_id ?? null,
+    productId: item.product.product_id,
+    title: item.product.title,
+    subtitle: item.rationale || item.goal,
+    imageUrl: productImageUrl(item.product),
+    quantity: item.quantity,
+    amountLabel:
+      item.monthly_cost !== null
+        ? formatMoney(item.monthly_cost, item.product.price_range.currency || "USD")
+        : "Pending",
+    tag: formatGoalTag(item.goal),
   };
 }
 
@@ -1506,6 +2020,150 @@ function buildReasoningText({
   return [firstParagraph, recommendationLines.join("\n"), alternativeLine, warningLine]
     .filter(Boolean)
     .join("\n\n");
+}
+
+function deriveCheckoutUiState(
+  runStatus: SupplementRunLifecycleStatus | null,
+  snapshot: SupplementStateSnapshot | null,
+): CheckoutTopLevelState {
+  if (!snapshot || runStatus === null) {
+    return "planning";
+  }
+
+  if (runStatus === "failed" || runStatus === "completed" || snapshot.order_confirmations.length) {
+    return "completed_or_needs_attention";
+  }
+
+  if (snapshot.checkout_sessions.length || snapshot.approved_store_domains.length) {
+    return "checkout_in_progress";
+  }
+
+  if (runStatus === "awaiting_approval") {
+    return "awaiting_approval";
+  }
+
+  return "planning";
+}
+
+function isBuyerProfileReady(profile: SupplementBuyerProfileRead | null) {
+  if (!profile) {
+    return false;
+  }
+
+  return Boolean(
+    profile.email &&
+      profile.shipping_name &&
+      profile.shipping_address.line1 &&
+      profile.shipping_address.city &&
+      profile.shipping_address.state &&
+      profile.shipping_address.postal_code &&
+      profile.consent_granted,
+  );
+}
+
+function isCheckoutSessionTerminal(status: SupplementCheckoutSessionRead["status"]) {
+  return status === "order_placed" || status === "cancelled" || status === "failed";
+}
+
+function collectCheckoutReadyStoreDomains(snapshot: SupplementStateSnapshot) {
+  return snapshot.store_carts
+    .filter((cart) => Boolean(cart.checkout_url))
+    .map((cart) => cart.store_domain.toLowerCase());
+}
+
+function actionLabelForWidget(
+  checkoutUiState: CheckoutTopLevelState,
+  snapshot: SupplementStateSnapshot,
+) {
+  if (checkoutUiState === "planning") {
+    return "Preparing stack";
+  }
+
+  if (checkoutUiState === "awaiting_approval") {
+    return "Confirm and buy";
+  }
+
+  if (snapshot.order_confirmations.length) {
+    return "View confirmations";
+  }
+
+  if (!snapshot.buyer_profile_ready) {
+    return "Add buyer setup";
+  }
+
+  if (snapshot.checkout_sessions.some((checkoutSession) => checkoutSession.status === "agent_running")) {
+    return "Agent checkout running...";
+  }
+
+  if (snapshot.checkout_sessions.some((checkoutSession) => checkoutSession.presentation_mode === "agent")) {
+    return "View live checkout";
+  }
+
+  if (snapshot.checkout_sessions.length) {
+    return "Open in-app checkout";
+  }
+
+  return "Confirm and buy";
+}
+
+function statusLineForWidget(
+  runStatus: SupplementRunLifecycleStatus | null,
+  snapshot: SupplementStateSnapshot,
+  checkoutSession: SupplementCheckoutSessionRead | null,
+) {
+  if (snapshot.order_confirmations.length) {
+    return "Order confirmation synced back into the conversation";
+  }
+
+  if (runStatus === "awaiting_approval") {
+    return "I built the carts. Confirm and buy when you want the browser agent to place the orders.";
+  }
+
+  if (!snapshot.buyer_profile_ready && snapshot.approved_store_domains.length) {
+    return "Stores approved. Next I need shipping details before the browser agent can start.";
+  }
+
+  if (checkoutSession?.status === "agent_running") {
+    const liveUrl = payloadString(checkoutSession.embedded_state_payload, "agent_live_url");
+    return liveUrl
+      ? "Browser agent is running in the embedded cloud browser."
+      : "Browser agent is starting the checkout browser.";
+  }
+
+  if (checkoutSession?.status === "failed") {
+    return checkoutSession.error_message
+      ? `Checkout failed: ${checkoutSession.error_message}`
+      : "Checkout failed before the browser agent could reach the store.";
+  }
+
+  if (checkoutSession?.presentation_mode === "agent") {
+    return "Browser-agent checkout progress appears directly in this chat.";
+  }
+
+  if (checkoutSession?.presentation_mode === "external") {
+    return "Checkout is ready, with a controlled handoff if embedding is blocked.";
+  }
+
+  if (checkoutSession) {
+    return "Embedded checkout session is ready in this chat.";
+  }
+
+  return "Checkout-ready cart built from the selected supplement plan.";
+}
+
+function descriptionForCheckoutState(checkoutUiState: CheckoutTopLevelState) {
+  switch (checkoutUiState) {
+    case "planning":
+      return "Building your supplement plan";
+    case "awaiting_approval":
+      return "Awaiting store approval";
+    case "checkout_in_progress":
+      return "Checkout in progress";
+    case "completed_or_needs_attention":
+      return "Completed or needs attention";
+    default:
+      return "Supplement checkout";
+  }
 }
 
 function createProductIndex(snapshot: SupplementStateSnapshot) {
@@ -1570,6 +2228,23 @@ function trimProductName(value: string) {
   return value.length > 72 ? `${value.slice(0, 69)}...` : value;
 }
 
+function sumNullable(values: Array<number | null>) {
+  if (values.some((value) => value === null)) {
+    return null;
+  }
+
+  let total = 0;
+  values.forEach((value) => {
+    total += value ?? 0;
+  });
+  return Math.round(total * 100) / 100;
+}
+
+function payloadString(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value : null;
+}
+
 function formatStoreName(storeDomain: string) {
   const domain = storeDomain.replace(/^www\./, "").split(".")[0] ?? storeDomain;
   return domain
@@ -1620,12 +2295,56 @@ function formatDurationLabel(startedAt: string, completedAt: string) {
   return `${Math.round(seconds)}s`;
 }
 
-function inputPlaceholder(runStatus: SupplementRunLifecycleStatus | null) {
+function inputPlaceholder(
+  runStatus: SupplementRunLifecycleStatus | null,
+  checkoutUiState: CheckoutTopLevelState,
+) {
+  if (checkoutUiState === "checkout_in_progress") {
+    return "Checkout is active in chat...";
+  }
+
   if (runStatus === "running") {
     return "Building your supplement plan...";
   }
 
   return "Ask anything";
+}
+
+function queueNarration({
+  key,
+  text,
+  timersRef,
+  messages,
+  setMessages,
+  seenRef,
+}: {
+  key: string;
+  text: string;
+  timersRef: React.MutableRefObject<Map<string, ReturnType<typeof setTimeout>>>;
+  messages: DemoMessage[];
+  setMessages: React.Dispatch<React.SetStateAction<DemoMessage[]>>;
+  seenRef: React.MutableRefObject<Set<string>>;
+}) {
+  if (seenRef.current.has(key)) {
+    return;
+  }
+
+  const assistantMessage = messages.find((message) => message.type === "assistant" && message.text === text);
+  if (assistantMessage) {
+    seenRef.current.add(key);
+    return;
+  }
+
+  seenRef.current.add(key);
+  setMessages((previousMessages) =>
+    upsertMessage(previousMessages, {
+      id: key,
+      type: "assistant",
+      text: "",
+      streaming: true,
+    }),
+  );
+  streamAssistantText(key, text, setMessages, timersRef);
 }
 
 function createSessionKey() {
